@@ -20,7 +20,7 @@
 | KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
 | KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/HARU-pc/dsh-mobile-ui/issues/11)） |
 | KI-11 | FAB が会話のセッション名・右パネルのファイル名の先頭を隠す | スマホ | 対応済み・実機確認待ち（ADR-20261026-1800、[#12](https://github.com/HARU-pc/dsh-mobile-ui/issues/12)） |
-| KI-12 | 右パネルのターミナルで、キーボードは出るのに文字が入らない | iPhone PWA（実機で報告あり） | 調査中（原因未特定。実機での切り分け待ち） |
+| KI-12 | 右パネルのターミナルで、キーボードは出るのに文字が入らない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261027-0020） |
 
 ## KI-1 Escape で閉じた後、フォーカスが FAB に戻らない（旧 Q1）
 
@@ -158,19 +158,25 @@
 ## KI-12 右パネルのターミナルで、キーボードは出るのに文字が入らない（T311）
 
 - **観測**: オーナーが iPhone PWA の実機で報告した（2026-10-26）。T343 のタップ時フォーカスより前から起きていた。
-- **確認済み（コードと happy-dom）**:
-  - 本プラグインのリスナーは、helper textarea の入力イベント（合成した列）を取り消さず、伝播も止めない（spec.md §5.3 `TerminalInputUntouched`、テストあり）。
-    CSS（`#root` の fixed、html/body の `overflow:hidden`、16px）とタッチ処理が実機の入力に与える影響は、happy-dom では検査できず未切り分け。
-    同梱の xterm 6.0.0 を本プラグインと同じ happy-dom ページで開き、英字（keyCode あり）、keyCode 229 + `input`、`composition*`、Enter の各列が
-    `onData` に届くことを確かめた（調査用スクリプト、commit しない）。
-  - DSH 側で入力が止まる条件: `writable=false` のとき `disableStdin` → textarea が `readOnly`（キーボードは出ない）、
-    PTY 未接続・他の端末が操作権を持つとき `write()` が捨てる（`dsh-api-terminal-controller` client.js:271-275。操作権は最後に接続した側へ移る。host index.js:363-391）。
-- **原因（未特定）**: 候補は次のとおり。実機の切り分けが要る。
-  1. iOS が `keydown` に keyCode を付けず（`keyCode=0`。xterm は keyCode<48 の文字を keydown で送らない。client.terminal.js:5140）、
-     keypress も来ないまま、`keyup` より前に `input` が `composed` 付きで来る列。xterm 6.0.0 の `_inputEvent`（同 :532）は
-     `!e.composed || !_keyDownSeen` を満たさない `input` を捨てる（xterm.js PR #5614 / issue #5835 の記録。happy-dom で再現: 文字が落ちる）。
-  2. keyCode 229 の後、xterm の `setTimeout(0)` の差分検出が textarea の値の更新より先に走る列（同じく文字が落ちる。他プロジェクトの記録）。
-  3. 書込権限が別の接続（デスクトップの同じタブなど）に移っている。画面のステータスに「読み取り専用」と「操作する」ボタンが出る。
-     キーボードが開いた後に権限が移った場合も、readOnly になり入力は捨てられる（キーボードが閉じるかは未確認）。
-  4. 本プラグインの CSS・タッチ処理。プラグインを一時的に無効にした状態（DSH のプラグイン管理で無効化して再読込）と比べて切り分ける。
-- **切り分け手順**: `tmp/terminal-input-probe.js`（worktree `fix/terminal-ios-input` の tmp/、commit しない）を Web インスペクタで実行し、イベント列と `onData` を記録する。
+  2026-10-26 23:23 の追加報告: 読み取り専用ではない（タップでキーボードが出る）。キーボードは Gboard。Enter は入り、押すたびにプロンプトが進む。
+  英字はほぼ入らず、まれに `a` だけが入った。
+- **原因（コード・一次資料と happy-dom の再現による。実機のイベント記録は未取得）**:
+  1. iOS の WebKit は、キーボードの入力メソッドが処理したキーの keydown を keyCode 229 にする（WebKit `EventHandler.cpp` の `CompositionEventKeyCode = 229`）。
+     Gboard などのサードパーティキーボードは文字を `insertText` で入れるため、英字も keydown 229 → `beforeinput` / `input`（`insertText`、`composed:true`）→ keyup の列になる（推定。
+     同じ列は iOS の中国語 IME の空白・句読点で記録がある: xterm.js issue #5835）。
+  2. xterm 6.0.0 の `_inputEvent`（sidebar-terminal 0.2.0-rc.2 `client.terminal.js:532`）は、keydown から keyup まで（`_keyDownSeen`）に来た `composed` な input を捨てる。
+     UA の input は常に `composed` なので、この列の文字は xterm の CompositionHelper の差分検出（同 `:1291-1326`）にしか拾われない。
+  3. 差分検出は keydown のときの値を控え、`setTimeout(0)` の後の値と比べる。値の更新がこの timer より遅れると、比べた時点で値はまだ変わっておらず、文字が落ちる
+     （#5835 の記録では input が keydown より 7–10ms 遅れる。iOS の実際の timer との前後は未計測）。
+  4. Enter は keyCode 13 の keydown を xterm が自分で `\r` に変えて送るので通る（同 `:493-511`、`:5140` 付近の `evaluateKeyboardEvent`）。Backspace も同じ経路。
+  5. まれに `a` だけ入る理由（仮説、未検証）: (i) 入力が keydown の timer より先に値へ入った打鍵だけを差分検出が拾う（happy-dom で input の遅れを 0ms にすると届き、1ms 以上で落ちる）、
+     または (ii) その打鍵だけ keydown が keyCode 65 で来た（xterm は keyCode ≥ 48 の 1 文字を keydown で送る）。`a` に偏る理由は特定していない。
+- **対応**: ADR-20261027-0020。`COARSE` で、xterm が捨てる `insertText` の input を document の capture で止め、`composed` でない input として同じ data を送り直す
+  （spec.md §5.3 `TerminalInputReachesOnce`）。送り直す前に textarea の値を `beforeinput` の時点へ戻し、差分検出との二重送信を避ける。変換中・確定の送信待ちは xterm に任せる。
+- **テスト**: `test/terminal-input.test.mjs`（npm の `@xterm/xterm@6.0.0` を happy-dom で動かす。28 件、うち DSH 同梱版との照合 1 件は配布物が無ければ skip）。
+  修正前の `lib/client.js` では 18 件が赤。変異 23 種のうち 22 種が赤（残る 1 種は送信待ちの世代の区別。順に走る timer では区別が効く列を作れなかった）。
+- **残る制限**: iOS の実際の列は合成で、時刻・順序の全部は再現しない。Gboard が英字を keyCode 229 + `insertText` で出すことは推定（実機のイベント記録が無い）。
+  自動修正の置換（`insertReplacementText`）、予測候補の単語挿入と空白の自動挿入、音声入力、ハードウェアキーボード付き iPad は未検証で、xterm の既定の扱いのまま。
+  確定の送信待ちの解除は timer の順序による近似で、間に他の timer が入るとその間の文字は落ちうる。戻し先の無い選択範囲の置換では、差分検出が DEL や余計な文字を送りうる。
+  xterm を版上げして `_inputEvent` が直った（PR #5614 相当）場合は、プラグイン無しの再現テストが赤になるので、介入を外すか見直す。
+- **実機の確認手順**: spec.md §8 の 2。切り分け用のスニペット `tmp/terminal-input-probe.js`（worktree `fix/terminal-ios-input` の tmp/、commit しない）は、直らなかったときのイベント記録に使う。
