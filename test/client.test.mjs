@@ -80,11 +80,10 @@ test("[§4.3] Escape で閉じる（PHONE・開のみ）", async () => {
 });
 
 // ---- §5.2 スワイプ判定表 ----
-test("[§5.2 行7 OpenOnlyWhenClosedPhone] 左半分起点の右スワイプで開き、右半分起点では開かない", async () => {
+test("[§5.2 行7 OpenOnlyWhenClosedPhone] 右スワイプは起点の位置を問わず開く", async () => {
+	// 起点が右半分（幅 390 の 300px）でも開く（ADR-20261026-1416）。
 	const h = mount();
-	swipe(h, h.el("msg"), [196, 300], [300, 300]);
-	assert.equal(h.calls.toggleSidebar, 0);
-	swipe(h, h.el("msg"), [195, 300], [300, 300]);
+	swipe(h, h.el("msg"), [300, 300], [380, 300]);
 	assert.equal(h.calls.toggleSidebar, 1);
 	h.close();
 	// PHONE 外（iPad 縦相当の coarse 768/900px）ではサイドバーを操作しない。
