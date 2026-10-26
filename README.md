@@ -33,6 +33,27 @@ Add to your DSH web profile patch layer (e.g. `~/.dsh/profiles/web/cordis.patch.
 
 Then reload the DSH web page on your device. To uninstall, remove the insert entry (and the symlink).
 
+### Remote access: folder picker / リモート利用時のフォルダ選択
+
+When you reach DSH from another device (e.g. Tailscale Serve), "Add workspace" opens a native chooser on the host's screen by default.
+Pin the in-app browser instead, then restart DSH (docs/spec.md §6.1):
+
+別端末（Tailscale Serve など）から使う場合、「Workspace 追加」は既定でホスト画面のフォルダ選択を開くため、手元では何も起きない。
+次をプロファイルに足して DSH を再起動すると、アプリ内のフォルダ一覧ダイアログになる。
+
+```yaml
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: directory-picker-browse
+      name: "@deepseek-ai/dsh-host-directory-picker-browse"
+    - id: ui-directory-picker-browse
+      name: "@deepseek-ai/dsh-client-ui-directory-picker-browse"
+```
+
+The plugin itself hides "Open In…" / "Show file location" when the page host is not loopback.
+「Open In…」「ファイルの場所を表示」は、ページのホスト名がループバック以外ならプラグインが自動で隠す。
+
 `package.json` の `"private": true` は npm への誤 publish を防ぐためのもので、GitHub 上での公開とは無関係。
 
 ## Design / 設計

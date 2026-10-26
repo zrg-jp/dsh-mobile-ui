@@ -7,7 +7,7 @@
 ## 1. スコープ
 
 DSH Web GUI をスマホ・タブレットで使うためのローカル client プラグイン。DSH 本体のコードは変更しない。
-次の 4 系統の介入を行う。
+次の系統の介入を行う。
 
 | 系統 | 有効条件 | 節 |
 |---|---|---|
@@ -16,6 +16,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | キーボード追従・入力 16px | `COARSE` | §6 |
 | viewport meta の書換 | 常時（幅・ポインタで分けない） | §6 |
 | セーフエリア padding | 幅 ≤1023px かつ `display-mode` が standalone / fullscreen | §6 |
+| ホストで開く操作（Open In・ファイルの場所を表示）の非表示 | ページのホスト名がループバック以外（§2 `REMOTE`） | §6.1 |
 
 ## 2. 用語と判定条件
 
@@ -27,6 +28,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | sidebarCol | frame の先頭の子要素 | [client.js:25](../lib/client.js#L25)、[client.js:215](../lib/client.js#L215) |
 | 開／閉 | frame に `data-sidebar-collapsed` が無ければ開、あれば閉。frame が無ければ常に閉として扱う | [client.js:158-161](../lib/client.js#L158-L161) |
 | 右パネル展開 | `ctx.sidebarRight.isExpanded()` が true | [client.js:345](../lib/client.js#L345) |
+| `REMOTE` | `location.hostname`（末尾ドットを除く）が `localhost`・`127.x.x.x`・`::1` のどれでもない（起動時に 1 回判定） | client.js `isLoopbackHost` |
 | オーバーレイ | `document.body` の子要素で、computed `position` が `fixed` のもの（DSH のメニュー・モーダル・トースト、本プラグインの FAB） | [client.js:174-205](../lib/client.js#L174-L205) |
 
 768–1023px は DSH 本体の狭幅挙動（<1024px でレール化し、トグルでオーバーレイ展開）に任せ、本プラグインはレイアウトを変えない。
@@ -44,6 +46,8 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | `data-lexical-editor` | チャット入力欄 | 16px 化の対象 |
 | `ctx.layout.toggleSidebar()` | ui-layout `LayoutController`。<1024px では `narrowExpanded` を反転する | 開閉の唯一の操作経路 |
 | `ctx.sidebarRight.isExpanded()` / `toggleExpanded()` | ui-sidebar-right。`isExpanded` は画面上のサーフェスが無ければ false | 右パネルを畳む |
+| `data-open-target`（ui-open-in-app の `OpenTargetButton` の外枠） | ui-open-in-app。セッションヘッダ・ファイルタブ・文書プレビュー・成果物カード・変更レビューで共通 | 非表示の対象（§6.1） |
+| ショートカット処理が window の keydown（bubble）で走ること、`workspace.openLocal` の Web 既定が ⌘/Ctrl+Shift+O | dsh-client-shortcuts / ui-open-in-app | キーの遮断（§6.1） |
 | `document.body` へ portal される固定オーバーレイ | ui-primitives `MenuSurface`、model-selection `ModelSelect`（`createPortal(..., document.body)`）、Modal、Toast（0.2.0-rc.2 で確認） | 座標系の補正対象（§6） |
 
 不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:212](../lib/client.js#L212)）。
@@ -137,9 +141,25 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 - **入力 16px**（`COARSE`、[client.js:73](../lib/client.js#L73)）: checkbox / radio 以外の input、textarea、select、`[data-lexical-editor]`、`[contenteditable=true]` に `font-size:16px !important` を指定する。iOS のフォーカス時自動ズームを抑止するためで、meta の `maximum-scale=1` との二重の対策になる。
 - **セーフエリア**（[client.js:75-78](../lib/client.js#L75-L78)）: 幅 ≤1023px で standalone / fullscreen 表示のとき、`#root` の上下左右に `env(safe-area-inset-*)` の padding を付ける。ドロワーと FAB は個別に inset を考慮する。
 
+### 6.1 リモート接続でホストの画面を使う操作（ADR-20261026-1750）
+
+DSH はアプリ起動・Finder 表示・ネイティブのフォルダ選択を**ホスト（DSH を動かしている Mac）の画面**で実行する。
+Tailscale Serve などで別端末から開くと、押しても手元では何も起きない。サーバは Serve の転送先 127.0.0.1 で bind するため、
+DSH 側の判定（`dsh-host-directory-picker-auto` の bind 判定、open-in-app の可否）ではリモートと区別できない。
+
+| 機能 | 対応 | 実装の場所 |
+|---|---|---|
+| Open In…（セッションヘッダ・ファイルタブ）、ファイルを既定アプリで開く・ファイルの場所を表示（文書プレビュー・成果物カード・変更レビュー） | `REMOTE` のとき `html[data-dsh-mobile-remote] [data-open-target]{display:none !important}` で非表示。代替は既存のアプリ内プレビュー（カード本体のタップで右パネルに開く） | 本プラグイン |
+| ショートカット「Open locally」（⌘/Ctrl+Shift+O） | `REMOTE` のとき document の keydown（bubble）で `stopPropagation` し、DSH のショートカット処理へ届けない。`preventDefault` はしない | 本プラグイン |
+| Workspace 追加（フォルダ選択） | プロファイルの `cordis.patch.yml` で `directory-picker`（auto）を無効化し、`dsh-host-directory-picker-browse` と `dsh-client-ui-directory-picker-browse` を直接載せる。アプリ内のフォルダ一覧ダイアログになり、スマホでも選択・新規作成できる。ローカル接続でも同じダイアログになる | プロファイル設定（README「Remote access: folder picker」） |
+
+- 不変条件 `RemoteHidesHostOpeners`: `REMOTE` の間、`[data-open-target]` は表示されない。ループバックでは触らない。
+- dispose で `data-dsh-mobile-remote` とキーのリスナーを外す（§7）。
+- 制限: 利用者がショートカットの割当てを変えた場合は遮断できない（[KI-11](known-issues.md)）。
+
 ## 7. ライフサイクル
 
-- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:372-374](../lib/client.js#L372-L374)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
+- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:372-374](../lib/client.js#L372-L374)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、html の `data-dsh-mobile-remote`、inert、全リスナー、observer。
 - `style[data-plugin-css="dsh-mobile-ui/override.css"]` が既にあれば、style タグを重ねて挿入しない。この場合、既存のタグは本 effect の撤去対象にならない。
 - 撤去手段は、`cordis.patch.yml` の insert を削除することと、ページを再読込すること（README）。
 
@@ -147,7 +167,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 - 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。iPad と Android は未確認。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、20 件）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、24 件）。各テストは名前の `[§n]` で本書の節に対応する。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
 
 ## 9. 既知の問題・未確定事項
