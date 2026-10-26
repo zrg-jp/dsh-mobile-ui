@@ -195,6 +195,12 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
   その `touchend` の中で `textarea.xterm-helper-textarea` に `focus({preventScroll:true})` を同期的に呼ぶ。
   textarea が無い、`readOnly`（DSH が書込権限の無いときに付ける `disableStdin`）または `disabled` なら何もしない。
   すでにフォーカス済み（DSH の表示時 effect による focus で、キーボードが出ていない状態がありうる）なら、キーボード表示中（`visualViewport.height < innerHeight − 100`）は何もせず、それ以外は `blur()` してから focus し直す。
+- 不変条件 `TerminalInputUntouched`: helper textarea を対象とする `keydown` / `keypress` / `keyup` / `beforeinput` / `input` / `composition*` は、
+  本プラグインのリスナーで `preventDefault` も伝播停止もしない（xterm 6.0.0 の入力経路。sidebar-terminal 0.2.0-rc.2 の `client.terminal.js:310`）。
+  T344 の Enter 処理と T310 の focusin ガードは `[data-composer-input]` 内だけを対象にし、ターミナルには及ばない。
+  入力 16px の規則（§6）は helper textarea にも当たるが、xterm は textarea の font-size を入力の判定に使わない（同 `:289`、`:493-541`）。
+  文字が入らない不具合（KI-12）の原因は未特定。確認したのは、合成したイベント列を本プラグインのリスナーが取り消さず止めないことまでで、
+  CSS（`#root` の fixed、html/body の `overflow:hidden`、16px）やタッチ処理が実機の入力に与える影響は、プラグインの有効・無効を比べて実機で切り分ける。
 - 高さ合わせ（キーボード表示時）は追加しない。`#root` の追従（§6）で右パネルとターミナルのマウント要素が縮み、DSH の `ResizeObserver` → fit が走る前提（実機未確認。ADR-20261026-1800）。
 - mouse tracking を使うアプリでは、xterm がこの wheel をアプリへの入力に変える（デスクトップのホイールと同じ扱い）。
 

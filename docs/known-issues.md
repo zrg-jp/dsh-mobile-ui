@@ -20,6 +20,7 @@
 | KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
 | KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/HARU-pc/dsh-mobile-ui/issues/11)） |
 | KI-11 | FAB が会話のセッション名・右パネルのファイル名の先頭を隠す | スマホ | 対応済み・実機確認待ち（ADR-20261026-1800、[#12](https://github.com/HARU-pc/dsh-mobile-ui/issues/12)） |
+| KI-12 | 右パネルのターミナルで、キーボードは出るのに文字が入らない | iPhone PWA（実機で報告あり） | 調査中（原因未特定。実機での切り分け待ち） |
 
 ## KI-1 Escape で閉じた後、フォーカスが FAB に戻らない（旧 Q1）
 
@@ -153,3 +154,23 @@
   FAB の右から始める（DSH 0.2.0-rc.2 の ui-conversation が参照する）。右パネル展開中は FAB を隠す（spec.md §4.5）。
   右パネルからサイドバーへは、右パネルを閉じるボタンか左端からの右スワイプで畳んでから FAB を使う。
 - **残る制限**: 全画面ルート（Plugins / Schedules など）の見出しと FAB の重なりは扱っていない。DSH が変数の参照をやめると、重なる元の表示へ戻る。
+
+## KI-12 右パネルのターミナルで、キーボードは出るのに文字が入らない（T311）
+
+- **観測**: オーナーが iPhone PWA の実機で報告した（2026-10-26）。T343 のタップ時フォーカスより前から起きていた。
+- **確認済み（コードと happy-dom）**:
+  - 本プラグインのリスナーは、helper textarea の入力イベント（合成した列）を取り消さず、伝播も止めない（spec.md §5.3 `TerminalInputUntouched`、テストあり）。
+    CSS（`#root` の fixed、html/body の `overflow:hidden`、16px）とタッチ処理が実機の入力に与える影響は、happy-dom では検査できず未切り分け。
+    同梱の xterm 6.0.0 を本プラグインと同じ happy-dom ページで開き、英字（keyCode あり）、keyCode 229 + `input`、`composition*`、Enter の各列が
+    `onData` に届くことを確かめた（調査用スクリプト、commit しない）。
+  - DSH 側で入力が止まる条件: `writable=false` のとき `disableStdin` → textarea が `readOnly`（キーボードは出ない）、
+    PTY 未接続・他の端末が操作権を持つとき `write()` が捨てる（`dsh-api-terminal-controller` client.js:271-275。操作権は最後に接続した側へ移る。host index.js:363-391）。
+- **原因（未特定）**: 候補は次のとおり。実機の切り分けが要る。
+  1. iOS が `keydown` に keyCode を付けず（`keyCode=0`。xterm は keyCode<48 の文字を keydown で送らない。client.terminal.js:5140）、
+     keypress も来ないまま、`keyup` より前に `input` が `composed` 付きで来る列。xterm 6.0.0 の `_inputEvent`（同 :532）は
+     `!e.composed || !_keyDownSeen` を満たさない `input` を捨てる（xterm.js PR #5614 / issue #5835 の記録。happy-dom で再現: 文字が落ちる）。
+  2. keyCode 229 の後、xterm の `setTimeout(0)` の差分検出が textarea の値の更新より先に走る列（同じく文字が落ちる。他プロジェクトの記録）。
+  3. 書込権限が別の接続（デスクトップの同じタブなど）に移っている。画面のステータスに「読み取り専用」と「操作する」ボタンが出る。
+     キーボードが開いた後に権限が移った場合も、readOnly になり入力は捨てられる（キーボードが閉じるかは未確認）。
+  4. 本プラグインの CSS・タッチ処理。プラグインを一時的に無効にした状態（DSH のプラグイン管理で無効化して再読込）と比べて切り分ける。
+- **切り分け手順**: `tmp/terminal-input-probe.js`（worktree `fix/terminal-ios-input` の tmp/、commit しない）を Web インスペクタで実行し、イベント列と `onData` を記録する。
