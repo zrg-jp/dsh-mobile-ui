@@ -62,4 +62,6 @@ The current specification is [docs/spec.md](docs/spec.md); decision records live
 
 ## License
 
-MIT
+MIT. Third-party notices (including code adapted from [dsh-mobile-maxxing](https://github.com/kuraneko1/dsh-mobile-maxxing), MIT): [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+第三者ソフトウェアの表示（上流 dsh-mobile-maxxing から移植したコードの一覧とライセンス全文）は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照。
