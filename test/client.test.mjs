@@ -2,7 +2,7 @@
 // 見出しの [§n] は spec の節番号。
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mount, swipe } from "./harness.mjs";
+import { mount, swipe, touchStart } from "./harness.mjs";
 
 const open = async (h) => { h.ctx.layout.toggleSidebar(); await h.flush(); };
 
@@ -39,6 +39,19 @@ test("[§4.1] PHONE ではサイドバーが fixed のドロワー、DragHandle 
 	assert.equal(cs.position, "fixed");
 	assert.equal(h.window.getComputedStyle(h.el("handle")).display, "none");
 	h.close();
+});
+
+test("[§4.1] prefers-reduced-motion では開閉どちらも transition を無効にする（KI-3）", async () => {
+	// happy-dom は詳細度とメディア（幅・reduced-motion）を考慮して computed style を解く。
+	const h = mount({ reducedMotion: true });
+	assert.equal(h.window.getComputedStyle(h.el("side")).transition, "none", "閉");
+	await open(h);
+	assert.equal(h.window.getComputedStyle(h.el("side")).transition, "none", "開");
+	h.close();
+	// 対照: 既定では閉じる側に visibility の遅延付き transition がある（検査が効いていることの確認）。
+	const n = mount();
+	assert.match(n.window.getComputedStyle(n.el("side")).transition, /visibility 0s \.25s/);
+	n.close();
 });
 
 test("[§4.3] FAB click で開く", async () => {
@@ -79,6 +92,87 @@ test("[§4.3] Escape で閉じる（PHONE・開のみ）", async () => {
 	h.close();
 });
 
+test("[§4.3 EscapeYieldsToForeground] モーダル表示中・処理済みの Escape ではドロワーを閉じない（KI-7）", async () => {
+	const h = mount();
+	await open(h);
+	// 前面のメニュー等が先に処理して preventDefault した Escape。
+	const handled = new h.window.KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+	handled.preventDefault();
+	h.document.dispatchEvent(handled);
+	assert.equal(h.calls.toggleSidebar, 1);
+	// DSH の Modal は本リスナーより後に処理するため、aria-modal=true の存在で判定する。
+	const modal = h.addPortal().parentElement;
+	h.document.dispatchEvent(new h.window.KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+	assert.equal(h.calls.toggleSidebar, 1);
+	// モーダルが閉じた後の Escape では閉じる。
+	modal.remove();
+	h.document.dispatchEvent(new h.window.KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+	assert.equal(h.calls.toggleSidebar, 2);
+	h.close();
+});
+
+test("[§4.3 EscapeRefocusesFab] Escape で閉じた後、FAB が表示状態（body=closed）になってから focus する（KI-1）", async () => {
+	// happy-dom は display:none の要素にも focus できてしまうため、focus を呼んだ時点の body 属性で検査する。
+	const h = mount();
+	await open(h);
+	const fab = h.document.querySelector(".dsh-mobile-ui-fab");
+	const seen = [];
+	const original = fab.focus.bind(fab);
+	fab.focus = () => { seen.push(h.document.body.dataset.dshMobileSidebar); original(); };
+	h.document.dispatchEvent(new h.window.KeyboardEvent("keydown", { key: "Escape" }));
+	await h.flush();
+	assert.deepEqual(seen, ["closed"]);
+	assert.equal(h.document.activeElement, fab);
+	// 予約は 1 回で消費する: 後で別経路（バックドロップ）で閉じても FAB へ奪わない。
+	await open(h);
+	h.el("msg").dispatchEvent(new h.window.PointerEvent("pointerdown", { bubbles: true }));
+	await h.flush();
+	assert.deepEqual(seen, ["closed"]);
+	h.close();
+	// DSH の実装どおり、data-sidebar-collapsed が再描画で後から変わる場合も、変わった後に focus する。
+	const a = mount();
+	await open(a);
+	const afab = a.document.querySelector(".dsh-mobile-ui-fab");
+	const aseen = [];
+	afab.focus = () => { aseen.push(a.document.body.dataset.dshMobileSidebar); };
+	const sync = a.ctx.layout.toggleSidebar.bind(a.ctx.layout);
+	a.ctx.layout.toggleSidebar = () => { setTimeout(sync, 5); };
+	a.document.dispatchEvent(new a.window.KeyboardEvent("keydown", { key: "Escape" }));
+	assert.deepEqual(aseen, [], "閉じが反映される前には focus しない");
+	await new Promise((r) => setTimeout(r, 20));
+	assert.deepEqual(aseen, ["closed"]);
+	a.close();
+	// 反映待ちの間に Escape が重なっても再トグルしない（開に戻さない）。
+	const b = mount();
+	await open(b);
+	const bfab = b.document.querySelector(".dsh-mobile-ui-fab");
+	const bseen = [];
+	bfab.focus = () => { bseen.push(b.document.body.dataset.dshMobileSidebar); };
+	const bsync = b.ctx.layout.toggleSidebar.bind(b.ctx.layout);
+	b.ctx.layout.toggleSidebar = () => { setTimeout(bsync, 5); };
+	b.document.dispatchEvent(new b.window.KeyboardEvent("keydown", { key: "Escape" }));
+	b.document.dispatchEvent(new b.window.KeyboardEvent("keydown", { key: "Escape" }));
+	await new Promise((r) => setTimeout(r, 20));
+	assert.equal(b.calls.toggleSidebar, 2, "open + Escape 1 回分だけ");
+	assert.deepEqual(bseen, ["closed"]);
+	b.ctx.layout.toggleSidebar = bsync;
+	// 予約が反映前に別経路の開閉で取り消された場合、その後の閉で FAB へ奪わない。
+	const c = mount();
+	await open(c);
+	const cfab = c.document.querySelector(".dsh-mobile-ui-fab");
+	const cseen = [];
+	cfab.focus = () => { cseen.push("focus"); };
+	// Escape の toggle がストアにだけ効き DOM に反映されない状況を作る（閉が失われた）。
+	c.ctx.layout.toggleSidebar = () => {};
+	c.document.dispatchEvent(new c.window.KeyboardEvent("keydown", { key: "Escape" }));
+	c.ctx.layout.toggleSidebar = () => { c.calls.toggleSidebar++; c.el("frame").setAttribute("data-sidebar-collapsed", ""); };
+	c.el("msg").dispatchEvent(new c.window.PointerEvent("pointerdown", { bubbles: true }));
+	await c.flush();
+	assert.deepEqual(cseen, [], "バックドロップで閉じたときは FAB へ移さない");
+	c.close();
+	b.close();
+});
+
 // ---- §5.2 スワイプ判定表 ----
 test("[§5.2 行7 OpenOnlyWhenClosedPhone] 右スワイプは起点の位置を問わず開く", async () => {
 	// 起点が右半分（幅 390 の 300px）でも開く（ADR-20261026-1416）。
@@ -97,6 +191,67 @@ test("[§5.2 行7 OpenOnlyWhenClosedPhone] 右スワイプは起点の位置を�
 	swipe(edge, edge.el("msg"), [10, 300], [120, 300]);
 	assert.equal(edge.calls.toggleSidebar, 1, "width=767 は PHONE");
 	edge.close();
+});
+
+test("[§5.1 SwipeOnlyInsideFrame] frame 外（portal されたモーダル）起点のスワイプは背後を操作しない（KI-5）", async () => {
+	const h = mount();
+	const modal = h.addPortal();
+	// 閉: 右スワイプでも背後のサイドバーを開かない。
+	swipe(h, modal, [20, 100], [100, 100]);
+	assert.deepEqual(h.calls, { toggleSidebar: 0, toggleExpanded: 0 });
+	// 右パネル展開中: 左端起点でも畳まない。
+	h.setRightExpanded(true);
+	swipe(h, modal, [10, 100], [100, 100]);
+	assert.deepEqual(h.calls, { toggleSidebar: 0, toggleExpanded: 0 });
+	h.setRightExpanded(false);
+	// 開: 左スワイプでも閉じない。
+	await open(h);
+	swipe(h, modal, [250, 100], [100, 100]);
+	assert.equal(h.calls.toggleSidebar, 1);
+	h.close();
+	// FAB は frame 外だが例外（タップと同じく開いてよい）。
+	const f = mount();
+	await f.flush();
+	swipe(f, f.document.querySelector(".dsh-mobile-ui-fab"), [20, 20], [100, 20]);
+	assert.equal(f.calls.toggleSidebar, 1);
+	f.close();
+	// frame が無いときはガードを掛けない（§3 SafeDegrade の範囲限定どおり、従来の判定に任せる）。
+	const n = mount({ withFrame: false });
+	swipe(n, n.addPortal(), [20, 100], [100, 100]);
+	assert.equal(n.calls.toggleSidebar, 1);
+	n.close();
+});
+
+test("[§5.1 DropSwipeOnViewportChange] 回転・幅変化・判定条件の変化をまたいだタッチは破棄する（T345）", async () => {
+	const h = mount();
+	// 幅が変わる resize（回転）をまたぐと開かない。PHONE の範囲内（390→700）なので media の change は来ない。
+	let t = touchStart(h, h.el("msg"), [10, 300]);
+	h.setViewport({ width: 700 });
+	await h.flush();
+	t.end([120, 300]);
+	assert.equal(h.calls.toggleSidebar, 0, "幅の変化");
+	// 幅の変わらない resize（KI-10 でキーボードの出入りごとに本プラグインが再送する）では捨てない。
+	t = touchStart(h, h.el("msg"), [10, 300]);
+	h.window.dispatchEvent(new h.window.Event("resize"));
+	t.end([120, 300]);
+	assert.equal(h.calls.toggleSidebar, 1, "幅が同じ resize では捨てない");
+	h.close();
+	// 幅は同じでも COARSE が外れたら捨てる（開始時に検査した前提が崩れる）。
+	const c = mount();
+	t = touchStart(c, c.el("msg"), [10, 300]);
+	c.setViewport({ coarse: false });
+	t.end([120, 300]);
+	assert.equal(c.calls.toggleSidebar, 0, "COARSE の change");
+	c.close();
+	// PHONE の境界をまたぐ回転（900→390）でも捨てる。PHONE の change は必ず幅の変化を伴うため、
+	// resize 側の破棄と区別できない（phoneMedia の監視は resize が来ない環境への備えで、ここでは個別に検査できない）。
+	const p = mount({ width: 900 });
+	t = touchStart(p, p.el("msg"), [10, 300]);
+	p.setViewport({ width: 390 });
+	await p.flush();
+	t.end([120, 300]);
+	assert.equal(p.calls.toggleSidebar, 0, "PHONE の change");
+	p.close();
 });
 
 test("[§5.2 行3] 閾値: |dx|=59 や縦優勢は無視", async () => {
