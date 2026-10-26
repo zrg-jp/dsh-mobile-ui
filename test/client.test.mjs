@@ -160,9 +160,18 @@ test("[§5.2 行4/8] 横スクロール祖先: 左端なら右スワイプ可、
 test("[§6] viewport meta を書換え、dispose で元に戻す", async () => {
 	const h = mount();
 	const meta = h.document.querySelector("meta[name=viewport]");
-	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content");
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content");
 	h.dispose();
 	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1");
+	h.close();
+});
+
+test("[§6 PinchAllowed] viewport meta にズームを制限する項目を足さない（KI-8）", async () => {
+	const h = mount();
+	const content = h.document.querySelector("meta[name=viewport]").getAttribute("content");
+	assert.doesNotMatch(content, /maximum-scale/);
+	assert.doesNotMatch(content, /user-scalable/);
+	assert.doesNotMatch(content, /minimum-scale/);
 	h.close();
 });
 
@@ -172,7 +181,7 @@ test("[§6 ViewportMerge] 既存の項目は順序ごと保ち、必要な項目
 	const meta = h.document.querySelector("meta[name=viewport]");
 	assert.equal(
 		meta.getAttribute("content"),
-		"width=device-width, height=device-height, initial-scale=1, minimum-scale=0.5, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+		"width=device-width, height=device-height, initial-scale=1, minimum-scale=0.5, viewport-fit=cover, interactive-widget=resizes-content"
 	);
 	h.dispose();
 	// 他者が触っていなければ、元の文字列をそのまま戻す（正規化した形にしない）。
@@ -183,7 +192,7 @@ test("[§6 ViewportMerge] 既存の項目は順序ごと保ち、必要な項目
 test("[§6 ViewportMerge] content 属性が無ければ必要な項目だけで作り、dispose で属性ごと消す", async () => {
 	const h = mount({ viewport: null });
 	const meta = h.document.querySelector("meta[name=viewport]");
-	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content");
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content");
 	h.dispose();
 	assert.equal(meta.hasAttribute("content"), false);
 	h.close();
