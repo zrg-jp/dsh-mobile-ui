@@ -92,6 +92,25 @@ test("[§4.3] Escape で閉じる（PHONE・開のみ）", async () => {
 	h.close();
 });
 
+test("[§4.3 EscapeYieldsToForeground] モーダル表示中・処理済みの Escape ではドロワーを閉じない（KI-7）", async () => {
+	const h = mount();
+	await open(h);
+	// 前面のメニュー等が先に処理して preventDefault した Escape。
+	const handled = new h.window.KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+	handled.preventDefault();
+	h.document.dispatchEvent(handled);
+	assert.equal(h.calls.toggleSidebar, 1);
+	// DSH の Modal は本リスナーより後に処理するため、aria-modal=true の存在で判定する。
+	const modal = h.addPortal().parentElement;
+	h.document.dispatchEvent(new h.window.KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+	assert.equal(h.calls.toggleSidebar, 1);
+	// モーダルが閉じた後の Escape では閉じる。
+	modal.remove();
+	h.document.dispatchEvent(new h.window.KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+	assert.equal(h.calls.toggleSidebar, 2);
+	h.close();
+});
+
 test("[§4.3 EscapeRefocusesFab] Escape で閉じた後、FAB が表示状態（body=closed）になってから focus する（KI-1）", async () => {
 	// happy-dom は display:none の要素にも focus できてしまうため、focus を呼んだ時点の body 属性で検査する。
 	const h = mount();

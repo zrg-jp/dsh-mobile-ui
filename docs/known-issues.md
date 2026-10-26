@@ -15,7 +15,7 @@
 | KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/HARU-pc/dsh-mobile-ui/issues/4)） |
 | KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
 | KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 記録のみ（[#6](https://github.com/HARU-pc/dsh-mobile-ui/issues/6)） |
-| KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 未着手（[#7](https://github.com/HARU-pc/dsh-mobile-ui/issues/7)） |
+| KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#7](https://github.com/HARU-pc/dsh-mobile-ui/issues/7)） |
 | KI-9 | 入力欄をタップすると、入力欄が画面の上へ外れていく | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-0450、2026-10-24 に実機で確認） |
 | KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 未着手（[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
 | KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/HARU-pc/dsh-mobile-ui/issues/11)） |
@@ -86,6 +86,11 @@
   ドロワーも閉じる。ただし Modal のリスナーが後に登録されて後に実行される場合は、`defaultPrevented` を見ても防げない。
 - **修正案**: `event.defaultPrevented` を確認する。あわせて、`[aria-modal=true]` が存在する間は Escape を無視する。
 - **影響**: 外付けキーボードのときだけ起きる。
+- **対応**: Escape のハンドラで `event.defaultPrevented` と `document.querySelector("[aria-modal=true]")` を確認し、どちらかなら何もしない（spec §4.3 `EscapeYieldsToForeground`）。
+  0.2.0-rc.2 の配布物で、Modal は `[role=dialog][aria-modal=true]` を描画し document の bubble で Escape を処理すること、
+  MenuSurface 系は capture 段階で `preventDefault` することを確認した。
+  残る制限: aria-modal を付けず、preventDefault もしない前面 UI とは引き続き同時に閉じうる。0.2.0-rc.2 では HoverCard の preview
+  （window の bubble 段階で処理）が該当する。Tooltip（openOnClick）は capture で `stopPropagation` するため対象外。
 
 ## KI-8 ピンチによる拡大縮小が効かない（旧 Q5）
 
