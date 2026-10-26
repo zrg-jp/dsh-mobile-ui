@@ -52,10 +52,12 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 		}
 		return media.get(q);
 	};
+	// 実ブラウザと同じく、matches が実際に変わった media だけに change を通知する。
 	const setViewport = (next) => {
+		const before = new Map([...media].map(([q, m]) => [q, m.matches]));
 		Object.assign(state, next);
 		if (next.width !== undefined) window.happyDOM.setViewport({ width: next.width });
-		for (const m of media.values()) for (const f of m.listeners) f({ matches: m.matches });
+		for (const [q, m] of media) if (m.matches !== before.get(q)) for (const f of m.listeners) f({ matches: m.matches });
 	};
 
 	// visualViewport は happy-dom に無いので、resize を発火できる簡易版を置く。
@@ -118,12 +120,21 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 	};
 }
 
-/** 単指の touchstart → touchend を target から発火する。 */
-export function swipe(h, target, from, to) {
+/** 単指の touchstart を target から発火する。終了は返り値の end(to) で発火する（途中に操作を挟む検査用）。 */
+export function touchStart(h, target, from) {
 	const { window } = h;
 	const mk = (x, y) => new window.Touch({ identifier: 1, target, clientX: x, clientY: y });
 	const start = mk(from[0], from[1]);
-	const end = mk(to[0], to[1]);
 	target.dispatchEvent(new window.TouchEvent("touchstart", { bubbles: true, touches: [start], changedTouches: [start] }));
-	target.dispatchEvent(new window.TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [end] }));
+	return {
+		end(to) {
+			const end = mk(to[0], to[1]);
+			target.dispatchEvent(new window.TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [end] }));
+		}
+	};
+}
+
+/** 単指の touchstart → touchend を target から発火する。 */
+export function swipe(h, target, from, to) {
+	touchStart(h, target, from).end(to);
 }

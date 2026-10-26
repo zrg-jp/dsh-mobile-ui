@@ -2,7 +2,7 @@
 // 見出しの [§n] は spec の節番号。
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mount, swipe } from "./harness.mjs";
+import { mount, swipe, touchStart } from "./harness.mjs";
 
 const open = async (h) => { h.ctx.layout.toggleSidebar(); await h.flush(); };
 
@@ -191,6 +191,38 @@ test("[§5.1 SwipeOnlyInsideFrame] frame 外（portal されたモーダル）�
 	swipe(n, n.addPortal(), [20, 100], [100, 100]);
 	assert.equal(n.calls.toggleSidebar, 1);
 	n.close();
+});
+
+test("[§5.1 DropSwipeOnViewportChange] 回転・幅変化・判定条件の変化をまたいだタッチは破棄する（T345）", async () => {
+	const h = mount();
+	// 幅が変わる resize（回転）をまたぐと開かない。PHONE の範囲内（390→700）なので media の change は来ない。
+	let t = touchStart(h, h.el("msg"), [10, 300]);
+	h.setViewport({ width: 700 });
+	await h.flush();
+	t.end([120, 300]);
+	assert.equal(h.calls.toggleSidebar, 0, "幅の変化");
+	// 幅の変わらない resize（KI-10 でキーボードの出入りごとに本プラグインが再送する）では捨てない。
+	t = touchStart(h, h.el("msg"), [10, 300]);
+	h.window.dispatchEvent(new h.window.Event("resize"));
+	t.end([120, 300]);
+	assert.equal(h.calls.toggleSidebar, 1, "幅が同じ resize では捨てない");
+	h.close();
+	// 幅は同じでも COARSE が外れたら捨てる（開始時に検査した前提が崩れる）。
+	const c = mount();
+	t = touchStart(c, c.el("msg"), [10, 300]);
+	c.setViewport({ coarse: false });
+	t.end([120, 300]);
+	assert.equal(c.calls.toggleSidebar, 0, "COARSE の change");
+	c.close();
+	// PHONE の境界をまたぐ回転（900→390）でも捨てる。PHONE の change は必ず幅の変化を伴うため、
+	// resize 側の破棄と区別できない（phoneMedia の監視は resize が来ない環境への備えで、ここでは個別に検査できない）。
+	const p = mount({ width: 900 });
+	t = touchStart(p, p.el("msg"), [10, 300]);
+	p.setViewport({ width: 390 });
+	await p.flush();
+	t.end([120, 300]);
+	assert.equal(p.calls.toggleSidebar, 0, "PHONE の change");
+	p.close();
 });
 
 test("[§5.2 行3] 閾値: |dx|=59 や縦優勢は無視", async () => {
