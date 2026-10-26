@@ -41,6 +41,19 @@ test("[§4.1] PHONE ではサイドバーが fixed のドロワー、DragHandle 
 	h.close();
 });
 
+test("[§4.1] prefers-reduced-motion では開閉どちらも transition を無効にする（KI-3）", async () => {
+	// happy-dom は詳細度とメディア（幅・reduced-motion）を考慮して computed style を解く。
+	const h = mount({ reducedMotion: true });
+	assert.equal(h.window.getComputedStyle(h.el("side")).transition, "none", "閉");
+	await open(h);
+	assert.equal(h.window.getComputedStyle(h.el("side")).transition, "none", "開");
+	h.close();
+	// 対照: 既定では閉じる側に visibility の遅延付き transition がある（検査が効いていることの確認）。
+	const n = mount();
+	assert.match(n.window.getComputedStyle(n.el("side")).transition, /visibility 0s \.25s/);
+	n.close();
+});
+
 test("[§4.3] FAB click で開く", async () => {
 	const h = mount();
 	h.document.querySelector(".dsh-mobile-ui-fab").click();

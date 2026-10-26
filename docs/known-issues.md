@@ -11,7 +11,7 @@
 |---|---|---|---|
 | KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#1](https://github.com/HARU-pc/dsh-mobile-ui/issues/1)） |
 | KI-2 | ピンチズームで `#root` の高さが縮む | KI-8 次第 | 保留（[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
-| KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 未着手（[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
+| KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
 | KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/HARU-pc/dsh-mobile-ui/issues/4)） |
 | KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 未着手（[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
 | KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 記録のみ（[#6](https://github.com/HARU-pc/dsh-mobile-ui/issues/6)） |
@@ -45,7 +45,9 @@
 - **現象（CSS の読解による）**: 閉時のセレクタ `[data-sidebar-collapsed]:has(> [data-rightbar-col])>:first-child` の詳細度は (0,3,0) で、
   reduced-motion 側の `:has(> [data-rightbar-col])>:first-child` の (0,2,0) より高い。このため、閉じるときは `transition:transform .25s, visibility 0s .25s` が残る。
 - **修正案**: reduced-motion 側に、閉時のセレクタと同じ詳細度のルールを追加する。
-- **テスト**: happy-dom の CSS カスケードで、computed の `transition` を検査できるか確認する。
+- **テスト**: happy-dom 20.14.6 は `settings.device.prefersReducedMotion` を media と詳細度つきのカスケードに反映するため、
+  computed の `transition` で開閉の両方を検査する（修正前の版では閉で赤になることを確認）。実ブラウザの描画（アニメーションが実際に止まるか）は実機で確認する。
+- **対応**: reduced-motion の media に `[data-sidebar-collapsed]:has(> [data-rightbar-col])>:first-child{transition:none;}` を追加した。
 
 ## KI-4 iPad 横（≥1024px）ではスワイプが効かない（旧 Q4）
 

@@ -22,9 +22,11 @@ const FRAME_HTML = `<div id="root"><div id="frame" data-sidebar-collapsed>
  * @param {number} [opt.width=390] innerWidth
  * @param {boolean} [opt.coarse=true] (pointer:coarse) の真偽
  * @param {boolean} [opt.withFrame=true] AppFrame を描画するか
+ * @param {boolean} [opt.reducedMotion=false] prefers-reduced-motion:reduce を CSS の media で一致させるか
  */
-export function mount({ width = 390, height = 800, coarse = true, withFrame = true } = {}) {
-	const window = new Window({ width, height, url: "http://localhost/" });
+export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false } = {}) {
+	// prefers-reduced-motion は happy-dom の device 設定で CSS のカスケードに反映される（20.14.6 で確認）。
+	const window = new Window({ width, height, url: "http://localhost/", settings: { device: { prefersReducedMotion: reducedMotion ? "reduce" : "no-preference" } } });
 	const document = window.document;
 	document.write(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${withFrame ? FRAME_HTML : '<div id="root"></div>'}</body></html>`);
 

@@ -58,7 +58,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 ### 4.1 レイアウト（CSS、[client.js:17-79](../lib/client.js#L17-L79)）
 - frame の `grid-template-columns` を `minmax(0,1fr) 0px 0px !important` にする。DSH がインライン style で指定する値より優先される。
 - sidebarCol を `position:fixed`、幅 `min(85vw,300px)`、`z-index:60` のドロワーにする。grid のフローから外れるため、centerCol が第 1 列に入る。
-- 閉時は `translateX(-110%)` と `visibility:hidden` で画面外へ出す。transition は .25s。`prefers-reduced-motion:reduce` で transition を無効にするのは開く側だけで、閉じる側は詳細度の差で .25s のまま残る（[KI-3](known-issues.md)）。
+- 閉時は `translateX(-110%)` と `visibility:hidden` で画面外へ出す。transition は .25s。`prefers-reduced-motion:reduce` では開閉どちらの transition も無効にする（閉時のセレクタと同じ詳細度の規則を reduced-motion 側に置く。KI-3）。
 - 開時は frame の `::after` を `z-index:59`、`rgba(0,0,0,.35)` の全面バックドロップとして表示する。
 - frame 直下の `[data-side]`（列リサイズ用ハンドル）を非表示にする。
 
@@ -149,7 +149,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 - 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。iPad と Android は未確認。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、21 件）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、22 件）。各テストは名前の `[§n]` で本書の節に対応する。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
 
 ## 9. 既知の問題・未確定事項
