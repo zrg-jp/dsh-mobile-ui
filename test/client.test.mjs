@@ -872,3 +872,110 @@ test("[§6.1 NoProgrammaticComposerFocus] 期限後・メニュー/ダイアロ�
 	assert.equal(t.document.activeElement, t.el("dlg"), "dialog 内");
 	t.close();
 });
+
+// ---- §6.2 Enter で改行（T344） ----
+
+/**
+ * 入力欄を置き、Lexical の代わりに keydown（送信）と beforeinput（改行）を数える。
+ * happy-dom の InputEvent は getTargetRanges を持たないので、iOS Safari と同じく持つように補う（ranges=true）。
+ */
+const mountComposer = ({ ranges = true, ...opt } = {}) => {
+	const h = mount(opt);
+	// happy-dom はクラスを Window 間で共有しうるため、prototype は書き換えず、この window にだけ派生クラスを置く。
+	if (ranges) h.window.InputEvent = class extends h.window.InputEvent { getTargetRanges() { return []; } };
+	const ed = addComposer(h);
+	const seen = { submit: 0, lineBreak: 0 };
+	// Lexical は root（入力欄）に keydown / beforeinput を登録する（target 段階）。
+	ed.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) seen.submit++; });
+	ed.addEventListener("beforeinput", (e) => { if (e.inputType === "insertLineBreak") seen.lineBreak++; });
+	const enter = (init = {}, el = ed) => {
+		const ev = new h.window.KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true, ...init });
+		el.dispatchEvent(ev);
+		return ev;
+	};
+	return { h, ed, seen, enter };
+};
+
+test("[§6.2 EnterInsertsLineBreak] COARSE の入力欄で修飾なしの Enter は送信せず、beforeinput insertLineBreak を送る（T344）", async () => {
+	const { h, seen, enter } = mountComposer();
+	const ev = enter();
+	assert.equal(ev.defaultPrevented, true);
+	assert.deepEqual(seen, { submit: 0, lineBreak: 1 });
+	h.close();
+	// fine pointer（デスクトップ）では DSH のまま（Enter で送信）。
+	const d = mountComposer({ coarse: false });
+	d.enter();
+	assert.deepEqual(d.seen, { submit: 1, lineBreak: 0 });
+	d.h.close();
+});
+
+test("[§6.2 EnterInsertsLineBreak] IME 変換中・修飾キー・候補選択中・入力欄外・dialog 内では触らない（T344）", async () => {
+	const { h, ed, seen, enter } = mountComposer();
+	enter({ isComposing: true });
+	enter({ keyCode: 229 });
+	ed.setAttribute("data-composer-composing", "");
+	enter();
+	ed.removeAttribute("data-composer-composing");
+	assert.deepEqual(seen, { submit: 3, lineBreak: 0 }, "変換中（Lexical / DSH が自分で判定する）");
+	for (const mod of ["shiftKey", "ctrlKey", "metaKey", "altKey"]) enter({ [mod]: true });
+	assert.equal(seen.lineBreak, 0, "修飾キー付き");
+	// 入力補完の候補が強調されている間は、Enter で候補を確定させる。
+	const list = h.document.createElement("div");
+	list.setAttribute("role", "listbox");
+	list.setAttribute("aria-activedescendant", "opt-1");
+	h.document.body.append(list);
+	enter();
+	list.remove();
+	assert.equal(seen.lineBreak, 0, "候補選択中");
+	// 入力欄の外（textarea）と dialog 内の入力欄。
+	const ev = enter({}, h.el("ta"));
+	assert.equal(ev.defaultPrevented, false);
+	h.el("center").insertAdjacentHTML("beforeend", '<div role="dialog"><div id="dlg" contenteditable="true" data-composer-input></div></div>');
+	assert.equal(enter({}, h.el("dlg")).defaultPrevented, false);
+	// 前面の UI が処理済みの Enter。
+	const handled = new h.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+	handled.preventDefault();
+	ed.dispatchEvent(handled);
+	assert.equal(seen.lineBreak, 0);
+	// 条件が外れた後は改行になる（検査が効いていることの確認）。
+	enter();
+	assert.equal(seen.lineBreak, 1);
+	// compositionend 直後（10ms 以内）の確定 Enter は、属性・フラグが消えていても本体へ渡す（独立レビューの指摘）。
+	const realNow = Date.now;
+	try {
+		let now = realNow();
+		Date.now = () => now;
+		ed.dispatchEvent(new h.window.CompositionEvent("compositionend", { bubbles: true }));
+		now += 10;
+		enter();
+		assert.equal(seen.lineBreak, 1, "確定直後（前の改行 1 回のまま）");
+		now += 1;
+		enter();
+		assert.equal(seen.lineBreak, 2, "猶予の後は改行");
+	} finally {
+		Date.now = realNow;
+	}
+	h.close();
+});
+
+test("[§6.2 EnterNewlineOptOut] localStorage の dsh-mobile-ui:enterNewline='0' と、beforeinput 非対応環境では従来どおり送信する（T344）", async () => {
+	const { h, seen, enter } = mountComposer();
+	h.window.localStorage.setItem("dsh-mobile-ui:enterNewline", "0");
+	enter();
+	assert.deepEqual(seen, { submit: 1, lineBreak: 0 });
+	h.window.localStorage.setItem("dsh-mobile-ui:enterNewline", "1");
+	enter();
+	assert.deepEqual(seen, { submit: 1, lineBreak: 1 }, "'0' 以外は有効（再読込なしで反映）");
+	h.close();
+	// InputEvent に getTargetRanges が無い環境では、Lexical が beforeinput を処理しないので奪わない。
+	const n = mountComposer({ ranges: false });
+	n.enter();
+	assert.deepEqual(n.seen, { submit: 1, lineBreak: 0 });
+	n.h.close();
+	// dispose 後は触らない。
+	const z = mountComposer();
+	z.h.dispose();
+	z.enter();
+	assert.deepEqual(z.seen, { submit: 1, lineBreak: 0 });
+	z.h.close();
+});

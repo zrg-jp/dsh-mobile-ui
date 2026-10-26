@@ -4,7 +4,7 @@
 - Date: 2026-10-26
 - Level: 3
 - Deciders: オーナー（T309 は A+C 案、T344 は COARSE で既定オン・送信はボタン、を決定）、実装は AI
-- Task: T309（セッション選択の 1 タップ化）、T310（自動フォーカスの抑止）
+- Task: T309（セッション選択の 1 タップ化）、T310（自動フォーカスの抑止）、T344（Enter で改行）
 
 ## Context
 
@@ -19,6 +19,7 @@ DSH 0.2.0-rc.2 の行（ui-workspace `SessionNodeItem`）は JS 上は 1 クリ�
 2. 改名ダイアログの誤発火（T309）。
 3. セッションを開いた後のドロワー（T309-C）と、そのための `ctx.sessions` への依存の持ち方。
 4. セッションを開いたときの入力欄への自動フォーカス（T310。開くたびにキーボードが出てチャットが隠れる）。
+5. iOS のソフトキーボードで改行できない（T344。Enter は送信、Shift+Enter が無い）。既定値はオーナーが「COARSE で既定オン、送信はボタン」と決定。
 
 ## 評価基準（実装前に確定）
 
@@ -29,6 +30,7 @@ DSH 0.2.0-rc.2 の行（ui-workspace `SessionNodeItem`）は JS 上は 1 クリ�
 - spec §3 の方針（ハッシュ化クラス名と内部ストアに依存しない）を守る。守れない部分は構造依存として明記する。
 - 入力欄（またはその近辺のボタン）をユーザーがタップしたときは、確実にキーボードが出ること（T310 の最優先）。
 - メニュー・ダイアログ内の入力（モデル検索・改名）を閉じないこと。
+- T344: IME 変換の確定 Enter・候補の確定 Enter・修飾キー付きの操作を壊さないこと。無効化の手段があること。
 - 自動テストで、各ガードを壊した版が赤になること。
 
 ## 選択肢
@@ -52,6 +54,12 @@ DSH 0.2.0-rc.2 の行（ui-workspace `SessionNodeItem`）は JS 上は 1 クリ�
      近辺の外での操作は記録を消す。keydown は場所を問わずユーザー操作とみなす。対象は `[data-composer-input]` で、menu / dialog / listbox 内は除く。
    - 4b. `inputmode="none"` を付けておき、タップでだけ外す。
    - 4c. `editor.focus` を差し替える（Lexical の内部 API）。
+5. Enter で改行
+   - 5a. document の capture で修飾なしの Enter を止め、入力欄へ `beforeinput`（insertLineBreak）を送り、Lexical 自身の経路で改行させる。
+     変換中と確定直後・修飾キー付き・候補の強調中・menu/dialog 内・Lexical が beforeinput を処理しない環境では触らない。
+   - 5b. 合成の Shift+Enter keydown を送る。
+   - 5c. `KEY_ENTER_COMMAND` に高い優先度で登録する（Lexical の editor インスタンスが要る）。
+   - 5d. DOM に `<br>` を直接挿入する。
 
 ## 外部根拠（比較実験は iPhone 実機が要り、本 ADR の作成時点では未実施）
 
@@ -88,11 +96,19 @@ DSH 0.2.0-rc.2 の行（ui-workspace `SessionNodeItem`）は JS 上は 1 クリ�
   4b は React が `inputmode` を管理しないものの、フォーカス中に属性を外したとき iOS がキーボードを出すか不確実。4c は内部実装への依存。
   上流（kuraneko1/dsh-mobile-maxxing 24e2e49、MIT）の focusin ガードの考え方を参考にした（コードは独立）。
 
+- 5a: Lexical 自身の beforeinput 処理（`insertLineBreak` → `INSERT_LINE_BREAK_COMMAND`）に乗るので、undo 履歴・選択範囲・
+  DSH の下書き同期が通常の改行と同じ経路になる。5b は上流（kuraneko1/dsh-mobile-maxxing 24e2e49、MIT）の記録によると iOS で keyCode 229 として捨てられる。
+  5c は内部実装への依存。5d は Lexical の状態と DOM が食い違う。Lexical は `getTargetRanges` の無い環境では beforeinput を登録しないため、
+  その環境では Enter を奪わない（奪うと改行も送信も起きない）。候補の確定は DSH の input-trigger が `aria-activedescendant` で強調を表すので、それを見る。
+  切替 UI は後回し（オーナー決定）。localStorage の `dsh-mobile-ui:enterNewline` を `"0"` にすると無効になる。
+  KI-9 の追従（ADR-20261024-0450）は visual viewport の変化だけを見るので、入力欄内の改行とは干渉しない（推定）。
+
 ## Consequences
 
 - Positive: 行を 1 タップで開ける見込み（実機未確認）。開いた後にドロワーが自動で閉じる。開いた後にキーボードが出ない見込み。
 - Negative: 「…」が常時見えるため、タイトルの表示幅が狭くなる。COARSE ではタイトルのダブルタップで改名できない。
   T310: キーボードが一瞬出て引っ込む可能性がある。キーボード付きの iPad（COARSE）でも、開いた直後は入力欄にフォーカスしない。
+  T344: COARSE では外付けキーボードでも Enter が改行になる（送信は Cmd/Ctrl+Enter か送信ボタン）。
 - Risk / 再検討条件: 実機で 2 タップが残る（原因が hover 以外: HoverCard の 800ms タイマー、marquee の rAF 等）なら 1B を検討する。
   DSH の行の子の順序が変われば別の子の display を固定する（誤作動）。版の更新時に spec §3 の契約を確認する。
 
@@ -114,6 +130,13 @@ DSH 0.2.0-rc.2 の行（ui-workspace `SessionNodeItem`）は JS 上は 1 クリ�
 - T310 独立レビュー（codex / gpt-6.1-sol、閲覧のみ）: (1) 期限が押下の開始基準なので、長押し後の正当なフォーカスを外す、
   (2) dispose 後も予約済みの blur が走る、の 2 件を採用した。押下中の状態と押下の終了時刻を記録し、撤去フラグで予約を無効にした。
 - T310 実機: 未確認。
+- T344 自動テスト（44 件時点）: 修飾なしの Enter で送信せず beforeinput を 1 回送ること、fine pointer では従来どおり、変換中 3 種・修飾キー 4 種・
+  候補の強調中・入力欄外・dialog 内・処理済みの Enter では触らないこと、localStorage の無効化（再読込なしで反映）、getTargetRanges の無い環境、dispose 後。
+  compositionend 直後 10ms の確定 Enter を本体へ渡すこと。変異 10 種でいずれも赤。Lexical が実際に改行を挿入するかは happy-dom では検査できない。
+- T344 独立レビュー（codex / gpt-6.1-sol、閲覧のみ）: compositionend 直後の確定 Enter（isComposing=false、keyCode=13）を改行に変えてしまう、との指摘を採用し、
+  DSH 本体と同じ 10ms の猶予を加えた。合成 beforeinput が Lexical に届くこと（isTrusted を見ない、getTargetRanges が空でも既存の選択で処理）、
+  shortcuts の window capture が Enter を処理しないこと、候補の強調と `aria-activedescendant` の対応は、レビューで配布物と照合し問題なしとされた。
+- T344 実機: 未確認。
 
 ## 関連ADR
 
