@@ -2,6 +2,7 @@
 
 - Status: proposed
 - Date: 2026-10-26
+- Issue: #18
 
 ## Context
 
