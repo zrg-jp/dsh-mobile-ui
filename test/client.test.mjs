@@ -307,6 +307,92 @@ test("[§6] 可視範囲が変わったら window の resize を再送する（K
 	}
 });
 
+test("[§6 PinchFreezesRoot] ピンチズーム中（scale≠1）は CSS 変数も resize の再送も更新しない（KI-2）", async () => {
+	const h = mount();
+	const style = h.document.documentElement.style;
+	// キーボード表示（scale=1）: 通常どおり追従する。
+	h.visualViewport.height = 500;
+	h.visualViewport.offsetTop = 290;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "500px");
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvtop"), "290px");
+	assert.equal(h.resizeCount(), 1);
+	// キーボード表示中にピンチで 2 倍: visual viewport は半分の高さになりパンするが、#root は据え置く。
+	h.visualViewport.scale = 2;
+	h.visualViewport.height = 250;
+	h.visualViewport.offsetTop = 400;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	h.visualViewport.dispatchEvent(new h.window.Event("scroll"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "500px");
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvtop"), "290px");
+	assert.equal(h.resizeCount(), 1, "ズーム中の変化では DSH の再配置を促さない");
+	// 拡大中にキーボードを閉じても据え置く（scale=1 に戻ったときに反映する）。
+	h.visualViewport.height = 400;
+	h.visualViewport.offsetTop = 0;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "500px");
+	// 等倍へ戻ると、その時点の値で追従を再開し、変化を通知する。
+	h.visualViewport.scale = 1;
+	h.visualViewport.height = 800;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "800px");
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvtop"), "0px");
+	assert.equal(h.resizeCount(), 2);
+	h.close();
+});
+
+test("[§6 PinchFreezesRoot] 等倍とみなす許容幅（|scale−1| ≤ 0.01）の内側では追従し、外側では止める", async () => {
+	const h = mount();
+	const style = h.document.documentElement.style;
+	h.visualViewport.scale = 1.009;
+	h.visualViewport.height = 600;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "600px");
+	h.visualViewport.scale = 1.02;
+	h.visualViewport.height = 590;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "600px");
+	h.close();
+	// 起動時点で拡大中なら変数を設定しない（CSS のフォールバック: 上端 0・高さ 100%）。
+	const z = mount({ scale: 2 });
+	assert.equal(z.document.documentElement.style.getPropertyValue("--dsh-mobile-vvh"), "");
+	z.close();
+});
+
+test("[§5.1 NoSwipeWhileZoomed] ピンチ拡大中の単指パンはスワイプにしない", async () => {
+	const h = mount();
+	h.visualViewport.scale = 2;
+	// 閉 → 右パン: 開かない。
+	swipe(h, h.el("msg"), [10, 300], [200, 300]);
+	// 右パネル展開中の左端起点の右パン: 畳まない。
+	h.setRightExpanded(true);
+	swipe(h, h.el("msg"), [0, 300], [200, 300]);
+	assert.deepEqual(h.calls, { toggleSidebar: 0, toggleExpanded: 0 });
+	h.setRightExpanded(false);
+	// 開 → 左パン: 閉じない。
+	await open(h);
+	swipe(h, h.el("msg"), [300, 300], [100, 300]);
+	assert.equal(h.calls.toggleSidebar, 1);
+	// 等倍で始め、終了時に拡大していたら（ピンチへ移行）破棄する。
+	h.visualViewport.scale = 1;
+	const t = (x) => new h.window.Touch({ identifier: 1, target: h.el("msg"), clientX: x, clientY: 300 });
+	h.el("msg").dispatchEvent(new h.window.TouchEvent("touchstart", { bubbles: true, touches: [t(300)], changedTouches: [t(300)] }));
+	h.visualViewport.scale = 1.5;
+	h.el("msg").dispatchEvent(new h.window.TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [t(100)] }));
+	assert.equal(h.calls.toggleSidebar, 1);
+	// 拡大中に始まり、終了時には等倍へ戻っていた操作（ピンチアウトの終わり）も破棄する。
+	h.visualViewport.scale = 2;
+	h.el("msg").dispatchEvent(new h.window.TouchEvent("touchstart", { bubbles: true, touches: [t(300)], changedTouches: [t(300)] }));
+	h.visualViewport.scale = 1;
+	h.el("msg").dispatchEvent(new h.window.TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [t(100)] }));
+	assert.equal(h.calls.toggleSidebar, 1);
+	// 等倍へ戻れば従来どおり（左スワイプで閉じる）。
+	h.visualViewport.scale = 1;
+	swipe(h, h.el("msg"), [300, 300], [100, 300]);
+	assert.equal(h.calls.toggleSidebar, 2);
+	h.close();
+});
+
 test("[§6] body 直下の固定オーバーレイに座標補正の印を付ける（KI-10）", async () => {
 	const h = mount();
 	const fixed = h.document.createElement("div");

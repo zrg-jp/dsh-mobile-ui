@@ -23,7 +23,7 @@ const FRAME_HTML = `<div id="root"><div id="frame" data-sidebar-collapsed>
  * @param {boolean} [opt.coarse=true] (pointer:coarse) の真偽
  * @param {boolean} [opt.withFrame=true] AppFrame を描画するか
  */
-export function mount({ width = 390, height = 800, coarse = true, withFrame = true, viewport = "width=device-width, initial-scale=1" } = {}) {
+export function mount({ width = 390, height = 800, coarse = true, withFrame = true, viewport = "width=device-width, initial-scale=1", scale = 1 } = {}) {
 	const window = new Window({ width, height, url: "http://localhost/" });
 	const document = window.document;
 	// viewport: 起動前の meta content（既定は DSH 0.2.0-rc.2 の dist/index.html と同じ値）。null なら content 属性なし。
@@ -60,7 +60,8 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 
 	// visualViewport は happy-dom に無いので、resize を発火できる簡易版を置く。
 	const vvTarget = new window.EventTarget();
-	const visualViewport = Object.assign(vvTarget, { height, offsetTop: 0 });
+	// scale はピンチズームの倍率（KI-2）。
+	const visualViewport = Object.assign(vvTarget, { height, offsetTop: 0, scale });
 	window.visualViewport = visualViewport;
 
 	// プラグイン適用前に window の resize を数える（KI-10: 起動時に送らないことの検査に要る）。
