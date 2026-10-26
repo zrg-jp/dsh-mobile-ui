@@ -7,7 +7,7 @@
 ## 1. スコープ
 
 DSH Web GUI をスマホ・タブレットで使うためのローカル client プラグイン。DSH 本体のコードは変更しない。
-次の 4 系統の介入を行う。
+次の系統の介入を行う。
 
 | 系統 | 有効条件 | 節 |
 |---|---|---|
@@ -23,11 +23,11 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 |---|---|---|
 | `PHONE` | `(max-width:767px)` | [client.js:11-13](../lib/client.js#L11-L13) |
 | `COARSE` | `(max-width:1023px) and (pointer:coarse)` | [client.js:15](../lib/client.js#L15) |
-| frame | `[data-rightbar-col]` 要素の親（DSH AppFrame の grid 要素） | [client.js:250](../lib/client.js#L250) |
-| sidebarCol | frame の先頭の子要素 | [client.js:88](../lib/client.js#L88)、[client.js:315](../lib/client.js#L315) |
-| 開／閉 | frame に `data-sidebar-collapsed` が無ければ開、あれば閉。frame が無ければ常に閉として扱う | [client.js:251-254](../lib/client.js#L251-L254) |
-| 右パネル展開 | `ctx.sidebarRight.isExpanded()` が true | [client.js:477](../lib/client.js#L477) |
-| オーバーレイ | `document.body` の子要素で、computed `position` が `fixed` のもの（DSH のメニュー・モーダル・トースト、本プラグインの FAB） | [client.js:267-300](../lib/client.js#L267-L300) |
+| frame | `[data-rightbar-col]` 要素の親（DSH AppFrame の grid 要素） | [client.js:264](../lib/client.js#L264) |
+| sidebarCol | frame の先頭の子要素 | [client.js:88](../lib/client.js#L88)、[client.js:329](../lib/client.js#L329) |
+| 開／閉 | frame に `data-sidebar-collapsed` が無ければ開、あれば閉。frame が無ければ常に閉として扱う | [client.js:265-268](../lib/client.js#L265-L268) |
+| 右パネル展開 | `ctx.sidebarRight.isExpanded()` が true | [client.js:521](../lib/client.js#L521) |
+| オーバーレイ | `document.body` の子要素で、computed `position` が `fixed` のもの（DSH のメニュー・モーダル・トースト、本プラグインの FAB） | [client.js:281-314](../lib/client.js#L281-L314) |
 
 768–1023px は DSH 本体の狭幅挙動（<1024px でレール化し、トグルでオーバーレイ展開）に任せ、本プラグインはレイアウトを変えない。
 
@@ -44,25 +44,30 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | `data-lexical-editor` | チャット入力欄 | 16px 化の対象 |
 | `ctx.layout.toggleSidebar()` | ui-layout `LayoutController`。<1024px では `narrowExpanded` を反転する | 開閉の唯一の操作経路 |
 | `ctx.sidebarRight.isExpanded()` / `toggleExpanded()` | ui-sidebar-right。`isExpanded` は画面上のサーフェスが無ければ false | 右パネルを畳む |
+| `--dsh-frame-leading-clearance`（frame から継承される CSS 変数） | ui-layout が darwin の閉時の frame に定め（160px / 84px）、ui-conversation の会話ヘッダ titleRow が `padding-inline-start: max(0px, calc(var(--dsh-frame-leading-clearance,0px) - 20px))` で参照する（conversation `lib/client.js` 15797） | 会話タイトルを FAB から離す（§4.4） |
+| `data-sidebar-right-open`（展開時だけ付く）と、セッション切替で変わる `hidden` | ui-sidebar-right `SidebarPanel` / `SessionView` | 右パネル展開の再判定の契機（判定自体は `isExpanded()`。§4.4） |
 | `document.body` へ portal される固定オーバーレイ | ui-primitives `MenuSurface`、model-selection `ModelSelect`（`createPortal(..., document.body)`）、Modal、Toast（0.2.0-rc.2 で確認） | 座標系の補正対象（§6） |
 
-不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:312](../lib/client.js#L312)）。
+不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:326](../lib/client.js#L326)）。
 これは全面的な無介入への復帰ではない。次の介入は残る。
 - `#root` の高さ、入力 16px、セーフエリア、viewport meta（frame に依存しない）
+- 右パネルの body 属性（`isExpanded()` から同期）
 - スワイプ: frame が無くても isOpen()=false なので、右スワイプで `toggleSidebar()` を呼びうる。frame 外起点を除外するガード（§5.1 `SwipeOnlyInsideFrame`）は、境界を決められないため掛けない
 
 子の順序だけが変わった場合は CSS が一致し続け、別の先頭要素を fixed／inert にする。この場合は劣化ではなく誤作動になる。
 
+DSH が `--dsh-frame-leading-clearance` の参照をやめた場合は、FAB がタイトルに重なる元の表示へ戻る。
+
 ## 4. ドロワー（`PHONE` のとき）
 
-### 4.1 レイアウト（CSS、[client.js:80-145](../lib/client.js#L80-L145)）
+### 4.1 レイアウト（CSS、[client.js:80-159](../lib/client.js#L80-L159)）
 - frame の `grid-template-columns` を `minmax(0,1fr) 0px 0px !important` にする。DSH がインライン style で指定する値より優先される。
 - sidebarCol を `position:fixed`、幅 `min(85vw,300px)`、`z-index:60` のドロワーにする。grid のフローから外れるため、centerCol が第 1 列に入る。
 - 閉時は `translateX(-110%)` と `visibility:hidden` で画面外へ出す。transition は .25s。`prefers-reduced-motion:reduce` では開閉どちらの transition も無効にする（閉時のセレクタと同じ詳細度の規則を reduced-motion 側に置く。KI-3）。
 - 開時は frame の `::after` を `z-index:59`、`rgba(0,0,0,.35)` の全面バックドロップとして表示する。
 - frame 直下の `[data-side]`（列リサイズ用ハンドル）を非表示にする。
 
-### 4.2 状態同期（[client.js:309-337](../lib/client.js#L309-L337)）
+### 4.2 状態同期（[client.js:323-351](../lib/client.js#L323-L351)）
 MutationObserver が文書全体の childList と `data-sidebar-collapsed` の変化を監視し、そのたびに次を同期する。`PHONE` の変化時にも同期する。
 
 | 出力 | 値 |
@@ -76,9 +81,9 @@ MutationObserver が文書全体の childList と `data-sidebar-collapsed` の�
 
 | 入力 | 条件 | 結果 | 根拠 |
 |---|---|---|---|
-| FAB の click | FAB は `PHONE ∧ body=closed` のときだけ表示される | トグル（開く） | [client.js:113-121](../lib/client.js#L113-L121)、[client.js:352-358](../lib/client.js#L352-L358) |
-| pointerdown（capture 段階） | `PHONE ∧ 開`、かつ target が sidebarCol 外・FAB 外・frame 内 | `preventDefault` と `stopPropagation` の後にトグル（閉じる） | [client.js:362-376](../lib/client.js#L362-L376) |
-| keydown `Escape` | `PHONE ∧ 開`、かつ `defaultPrevented` でなく、`[aria-modal=true]` が文書に無い（KI-7） | トグル（閉じる）。閉じが frame に反映され、`body=closed`（FAB 表示）に同期した時点で `fab.focus()` を呼ぶ（KI-1） | [client.js:389-398](../lib/client.js#L389-L398)（`onKeyDown`）、[client.js:309-337](../lib/client.js#L309-L337)（`syncState`） |
+| FAB の click | FAB は `PHONE ∧ body=closed` のときだけ表示される（右パネル展開中は除く。§4.4） | トグル（開く） | [client.js:112-135](../lib/client.js#L112-L135)、[client.js:366-372](../lib/client.js#L366-L372) |
+| pointerdown（capture 段階） | `PHONE ∧ 開`、かつ target が sidebarCol 外・FAB 外・frame 内 | `preventDefault` と `stopPropagation` の後にトグル（閉じる） | [client.js:376-390](../lib/client.js#L376-L390) |
+| keydown `Escape` | `PHONE ∧ 開`、かつ `defaultPrevented` でなく、`[aria-modal=true]` が文書に無い（KI-7） | トグル（閉じる）。閉じが frame に反映され、`body=closed`（FAB 表示）に同期した時点で `fab.focus()` を呼ぶ（KI-1） | [client.js:403-412](../lib/client.js#L403-L412)（`onKeyDown`）、[client.js:323-351](../lib/client.js#L323-L351)（`syncState`） |
 
 不変条件 `EscapeRefocusesFab`: Escape で閉じたとき、FAB へのフォーカスは `body[data-dsh-mobile-sidebar=closed]` に更新した後に行う（`toggleSidebar()` は DSH のストアを更新するだけで、`data-sidebar-collapsed` は再描画で後から変わるため）。予約は Escape から 1 秒以内の最初の閉で消費する。Escape 以外の経路（FAB・バックドロップ・スワイプ）でトグルすると予約を取り消すので、その経路の閉ではフォーカスを動かさない。予約が有効な間（閉の反映待ち）の Escape は無視する（`isOpen()` が古い値を返し、再トグルで開に戻るのを防ぐ）。
 
@@ -86,11 +91,24 @@ MutationObserver が文書全体の childList と `data-sidebar-collapsed` の�
 
 不変条件 `BackdropOnlyInsideFrame`: frame 外の target（`document.body` 直下へ portal される Modal やメニューなど）への pointerdown では、ドロワーを閉じない。
 
+### 4.4 FAB とヘッダ・右パネル（issue #12、ADR-20261026-1800）
+FAB は左上（`left = safe-left + 10px`、幅 36px。右端は `safe-left + 46px`）に固定され、閉時は中央カラムの先頭に重なる。
+
+- 不変条件 `FabClearsHeader`: `PHONE ∧ 閉` の frame に `--dsh-frame-leading-clearance` を `calc(56px + env(safe-area-inset-left))` として与える（幅 ≤767px の standalone / fullscreen 表示では `#root` が inset の padding を持つので `56px`）。
+  会話ヘッダのタイトル行は header の左端からこの値の位置で始まる（§3 の契約）。開（ドロワー表示中）と `PHONE` 外では与えず、DSH の既定に任せる。
+  darwin（デスクトップ）の DSH の規則とは幅で重ならない。
+- `body[data-dsh-mobile-right]`: `ctx.sidebarRight.isExpanded()` が true なら `open`、それ以外（例外を含む）は `closed`。
+  起動時と、文書内の childList・`data-sidebar-right-open`・`hidden` の変化のたびに同期し、dispose で消す（[client.js:418-446](../lib/client.js#L418-L446)）。
+  DOM 属性は契機にだけ使い、背景セッションに残るパネルの属性では判定しない。
+- 不変条件 `FabHiddenWhileRightPanel`: `PHONE ∧ body=closed ∧ body[data-dsh-mobile-right=open]` では FAB を表示しない（<768px の右パネルは 100vw の全画面で、タブ列・ファイル名の先頭を覆うため）。
+  右パネルからサイドバーへは、DSH の閉じるボタンか左端からの右スワイプ（§5.2 行 5）で右パネルを畳んでから FAB を使う。
+- 未確定: 全画面ルート（Plugins / Schedules など、`activePanelId !== null`）の見出しと FAB の重なりは扱っていない。
+
 ## 5. スワイプ（`COARSE` のとき）
 
 document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定する。`preventDefault` は呼ばないため、ネイティブのスクロールを妨げない（ADR-20261023-1750）。
 
-### 5.1 候補の確定（touchstart、[client.js:424-453](../lib/client.js#L424-L453)）
+### 5.1 候補の確定（touchstart、[client.js:468-497](../lib/client.js#L468-L497)）
 - 候補になるのは、`COARSE` かつ単指で、ピンチズーム中（`|visualViewport.scale − 1| > 0.01`、§6）でなく、`textarea,input,[contenteditable=true]` の外から始まり、`SwipeOnlyInsideFrame` を満たすタッチだけ。
 - 不変条件 `SwipeOnlyInsideFrame`（KI-5）: frame があるとき、起点が frame 外（`document.body` へ portal されたモーダル・メニュー・トーストなど）のタッチは候補にしない。
   pointerdown の `BackdropOnlyInsideFrame` と同じ境界にそろえる。例外は FAB（frame 外だが、本プラグインの開く操作の起点なので候補にする）。
@@ -102,7 +120,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
   開始時の座標・`edge`・横スクロール祖先は変化前のレイアウトで測ったものだから。幅の変わらない `resize`（§6 で本プラグインがキーボードの出入りごとに再送するもの）では破棄しない。
   （Idea from kuraneko1/dsh-mobile-maxxing 24e2e49, MIT。実装は独自）
 
-### 5.2 判定（touchend、[client.js:454-491](../lib/client.js#L454-L491)）
+### 5.2 判定（touchend、[client.js:498-535](../lib/client.js#L498-L535)）
 `dx`、`dy` は終了点と開始点の差で、途中の軌跡は見ない。上から順に評価し、最初に該当した行で決まる。
 
 | # | 条件 | 結果 |
@@ -132,7 +150,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 ## 6. viewport・キーボード・セーフエリア
 
-- **viewport meta**（ADR-20261026-1450、[client.js:171-202](../lib/client.js#L171-L202)）: `meta[name=viewport]` があれば、content を項目単位でマージする。meta が無い場合は新規作成しない。この書換は幅にもポインタにも依存しない。
+- **viewport meta**（ADR-20261026-1450、[client.js:185-216](../lib/client.js#L185-L216)）: `meta[name=viewport]` があれば、content を項目単位でマージする。meta が無い場合は新規作成しない。この書換は幅にもポインタにも依存しない。
   - 管理項目は `width=device-width`、`initial-scale=1`、`viewport-fit=cover`、`interactive-widget=resizes-content` の 4 つ。
     content を `,` または `;`（混在可）で項目に分け（前後の空白と空の項目は捨てる）、key（`=` の前、大文字小文字を区別しない）で照合する。
     管理項目は最初の出現位置で置き換え、同じ key の 2 つ目以降は消す。無ければ末尾へ足す。それ以外の項目は表記と順序を保つ。区切りは `, ` で書き出す。
@@ -158,12 +176,12 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
   位置プロパティ（`top` / `left`）は書き換えないため、DSH の配置計算（トリガーの rect と `offsetHeight`）には影響しない。対象は `#root` 以外。
   不変条件 `OverlaysShareRootFrame`: `COARSE` の間、オーバーレイは `#root` と同じ `offsetTop` の補正を受ける。offsetLeft（横方向）は補正しない。
   `COARSE` の change は監視しないため、条件を外れた間も変数は前の値のまま残る（[KI-6](known-issues.md)）。
-- **入力 16px**（`COARSE`、[client.js:139](../lib/client.js#L139)）: checkbox / radio 以外の input、textarea、select、`[data-lexical-editor]`、`[contenteditable=true]` に `font-size:16px !important` を指定する。iOS のフォーカス時自動ズームを抑止する。meta でズームを制限しないため（`PinchAllowed`）、この規則が唯一の対策になる（ADR-20261026-1450）。
-- **セーフエリア**（[client.js:141-144](../lib/client.js#L141-L144)）: 幅 ≤1023px で standalone / fullscreen 表示のとき、`#root` の上下左右に `env(safe-area-inset-*)` の padding を付ける。ドロワーと FAB は個別に inset を考慮する。
+- **入力 16px**（`COARSE`、[client.js:153](../lib/client.js#L153)）: checkbox / radio 以外の input、textarea、select、`[data-lexical-editor]`、`[contenteditable=true]` に `font-size:16px !important` を指定する。iOS のフォーカス時自動ズームを抑止する。meta でズームを制限しないため（`PinchAllowed`）、この規則が唯一の対策になる（ADR-20261026-1450）。
+- **セーフエリア**（[client.js:155-158](../lib/client.js#L155-L158)）: 幅 ≤1023px で standalone / fullscreen 表示のとき、`#root` の上下左右に `env(safe-area-inset-*)` の padding を付ける。ドロワーと FAB は個別に inset を考慮する。
 
 ## 7. ライフサイクル
 
-- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:521-523](../lib/client.js#L521-L523)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
+- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:565-567](../lib/client.js#L565-L567)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
 - `style[data-plugin-css="dsh-mobile-ui/override.css"]` が既にあれば、style タグを重ねて挿入しない。この場合、既存のタグは本 effect の撤去対象にならない。
 - 撤去手段は、`cordis.patch.yml` の insert を削除することと、ページを再読込すること（README）。
 
@@ -172,8 +190,11 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 - 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。iPad と Android は未確認。
   ピンチズームの許可と `PinchFreezesRoot`（ADR-20261026-1450、KI-2・KI-8）は実機未確認。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、34 件）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、39 件。`test/client.test.mjs` 34 件、`test/chrome.test.mjs` 5 件）。各テストは名前の `[§n]` で本書の節に対応する。
+  happy-dom で検査できないもの: カスタムプロパティの継承と実際の重なり、`display-mode`（規則の文字列で検査）。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
+- 実機未確認（ADR-20261026-1800）: §4.4。iPhone PWA での確認項目:
+  1. 閉時に会話タイトルが FAB の右から始まるか（縦・横向き）。右パネルを開くと FAB が消え、閉じるボタン・左端からの右スワイプで戻ると FAB が出るか。
 
 ## 9. 既知の問題・未確定事項
 

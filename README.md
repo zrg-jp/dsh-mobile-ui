@@ -15,6 +15,8 @@ DSH Web GUI をスマホ・タブレットで使いやすくするローカル c
 - **Portal overlays stay in view**: overlays portaled to `document.body` (the model picker, modals, toasts) are translated by the same visual-viewport offset as `#root`, so the iOS keyboard no longer pushes them off-screen.
   body 直下へ portal されるオーバーレイ（モデル選択メニュー等）も `#root` と同じ補正を受け、キーボード表示中も画面内に留まる（KI-10、ADR-20261024-1646）。
 - **Safe-area padding** for notch / home-indicator in PWA display modes.
+- **Header clearance & right panel**: the conversation title starts right of the FAB (via DSH's own `--dsh-frame-leading-clearance`); the FAB hides while the full-screen right panel is open.
+  会話タイトルを FAB の右から始め、右パネル（全画面）展開中は FAB を隠す（issue #12）。
 
 ## Install / 導入
 
