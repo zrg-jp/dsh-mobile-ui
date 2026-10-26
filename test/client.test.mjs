@@ -745,3 +745,130 @@ test("[§3 OptionalSessions] ctx.sessions が無くても他の機能は動き�
 	assert.equal(t.sessionListeners(), 0, "dispose で購読解除");
 	t.close();
 });
+
+// ---- §6.1 入力欄の自動フォーカス（T310） ----
+
+/** DSH 0.2.0-rc.2 の入力カード（[data-composer-card]）と Lexical の入力欄を centerCol に置く。 */
+const addComposer = (h) => {
+	h.el("center").insertAdjacentHTML("beforeend", '<div data-composer-card id="card"><div id="ed" contenteditable="true" role="textbox" data-composer-input data-lexical-editor="true"></div><button id="send" type="button">send</button></div>');
+	return h.el("ed");
+};
+const pointer = (h, el) => el.dispatchEvent(new h.window.PointerEvent("pointerdown", { bubbles: true }));
+
+test("[§6.1 NoProgrammaticComposerFocus] COARSE では、ユーザー操作の無い入力欄へのフォーカスを次のタスクで外す（T310）", async () => {
+	const h = mount();
+	const ed = addComposer(h);
+	// セッション行のタップで開いた → DSH の InputBar が focus する、の再現。
+	pointer(h, h.el("side-btn"));
+	ed.focus();
+	assert.equal(h.document.activeElement, ed, "同期の blur はしない（再フォーカスとの再帰を避ける）");
+	await h.flush();
+	assert.notEqual(h.document.activeElement, ed);
+	h.close();
+	// fine pointer（デスクトップ）ではフォーカスを保つ。
+	const d = mount({ coarse: false });
+	const ded = addComposer(d);
+	ded.focus();
+	await d.flush();
+	assert.equal(d.document.activeElement, ded);
+	d.close();
+});
+
+test("[§6.1 UserTapKeepsFocus] 入力欄・入力カードを直近にタップしたときのフォーカスは外さない（T310）", async () => {
+	for (const [kind, id] of [["pointerdown", "ed"], ["touchstart", "ed"], ["pointerdown", "send"]]) {
+		const h = mount();
+		const ed = addComposer(h);
+		const target = h.el(id);
+		if (kind === "pointerdown") pointer(h, target);
+		else touchStart(h, target, [10, 700]);
+		ed.focus();
+		await h.flush();
+		assert.equal(h.document.activeElement, ed, `${kind} on ${id}`);
+		h.close();
+	}
+	// 外付けキーボードの操作の直後（ショートカット等）も外さない。
+	const k = mount();
+	const ked = addComposer(k);
+	k.document.dispatchEvent(new k.window.KeyboardEvent("keydown", { key: "k", metaKey: true }));
+	ked.focus();
+	await k.flush();
+	assert.equal(k.document.activeElement, ked, "keydown");
+	k.close();
+	// 長押し: 押下の開始から 1.5 秒を超えてフォーカスしても、押下中と押下の終了直後は外さない（独立レビューの指摘）。
+	const l = mount();
+	const led = addComposer(l);
+	const realNow = Date.now;
+	try {
+		let now = realNow();
+		Date.now = () => now;
+		pointer(l, led);
+		now += 3000;
+		led.focus();
+		await l.flush();
+		assert.equal(l.document.activeElement, led, "押下中");
+		led.blur();
+		led.dispatchEvent(new l.window.PointerEvent("pointerup", { bubbles: true }));
+		now += 1000;
+		led.focus();
+		await l.flush();
+		assert.equal(l.document.activeElement, led, "押下の終了から 1 秒");
+	} finally {
+		Date.now = realNow;
+	}
+	l.close();
+	// 入力欄をタップした後でも、その後にセッション行を触って開いた場合は外す。
+	const r = mount();
+	const red = addComposer(r);
+	pointer(r, red);
+	pointer(r, r.el("side-btn"));
+	red.focus();
+	await r.flush();
+	assert.notEqual(r.document.activeElement, red);
+	r.close();
+});
+
+test("[§6.1 NoProgrammaticComposerFocus] 期限後・メニュー/ダイアログ内・入力欄以外は対象を正しく分ける（T310）", async () => {
+	// 期限（1.5 秒）を過ぎた操作は、ユーザー操作とみなさない。
+	const h = mount();
+	const ed = addComposer(h);
+	const realNow = Date.now;
+	try {
+		let now = realNow();
+		Date.now = () => now;
+		pointer(h, ed);
+		ed.dispatchEvent(new h.window.PointerEvent("pointerup", { bubbles: true }));
+		now += 1501;
+		ed.focus();
+		await h.flush();
+		assert.notEqual(h.document.activeElement, ed, "期限後");
+		now += 1;
+		pointer(h, ed);
+		ed.dispatchEvent(new h.window.PointerEvent("pointerup", { bubbles: true }));
+		now += 1500;
+		ed.focus();
+		await h.flush();
+		assert.equal(h.document.activeElement, ed, "期限ちょうど");
+	} finally {
+		Date.now = realNow;
+	}
+	h.close();
+	// dispose 後は、予約済みの blur も実行しない（独立レビューの指摘）。
+	const z = mount();
+	const zed = addComposer(z);
+	zed.focus();
+	z.dispose();
+	await z.flush();
+	assert.equal(z.document.activeElement, zed, "dispose 後");
+	z.close();
+	// ダイアログ内の入力欄（改名など）と、入力欄以外（textarea）には触らない。
+	const t = mount();
+	t.el("center").insertAdjacentHTML("beforeend", '<div role="dialog"><div id="dlg" contenteditable="true" data-composer-input></div></div>');
+	t.el("dlg").focus();
+	t.el("ta").focus();
+	await t.flush();
+	assert.equal(t.document.activeElement, t.el("ta"));
+	t.el("dlg").focus();
+	await t.flush();
+	assert.equal(t.document.activeElement, t.el("dlg"), "dialog 内");
+	t.close();
+});
