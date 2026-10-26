@@ -7,11 +7,12 @@
 ## 1. スコープ
 
 DSH Web GUI をスマホ・タブレットで使うためのローカル client プラグイン。DSH 本体のコードは変更しない。
-次の 4 系統の介入を行う。
+次の系統の介入を行う。
 
 | 系統 | 有効条件 | 節 |
 |---|---|---|
 | ドロワー化レイアウト・FAB・バックドロップ・Escape | `PHONE`（§2） | §4 |
+| セッション行の 1 タップ化・切替時にドロワーを閉じる | `COARSE`（行の表示・dblclick）／`PHONE`（閉じる） | §4.4 |
 | スワイプジェスチャ | `COARSE`（§2）。動作ごとに `PHONE` も要る | §5 |
 | キーボード追従・入力 16px | `COARSE` | §6 |
 | viewport meta の書換 | 常時（幅・ポインタで分けない） | §6 |
@@ -23,11 +24,11 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 |---|---|---|
 | `PHONE` | `(max-width:767px)` | [client.js:11-13](../lib/client.js#L11-L13) |
 | `COARSE` | `(max-width:1023px) and (pointer:coarse)` | [client.js:15](../lib/client.js#L15) |
-| frame | `[data-rightbar-col]` 要素の親（DSH AppFrame の grid 要素） | [client.js:250](../lib/client.js#L250) |
-| sidebarCol | frame の先頭の子要素 | [client.js:88](../lib/client.js#L88)、[client.js:315](../lib/client.js#L315) |
-| 開／閉 | frame に `data-sidebar-collapsed` が無ければ開、あれば閉。frame が無ければ常に閉として扱う | [client.js:251-254](../lib/client.js#L251-L254) |
-| 右パネル展開 | `ctx.sidebarRight.isExpanded()` が true | [client.js:477](../lib/client.js#L477) |
-| オーバーレイ | `document.body` の子要素で、computed `position` が `fixed` のもの（DSH のメニュー・モーダル・トースト、本プラグインの FAB） | [client.js:267-300](../lib/client.js#L267-L300) |
+| frame | `[data-rightbar-col]` 要素の親（DSH AppFrame の grid 要素） | [client.js:311](../lib/client.js#L311) |
+| sidebarCol | frame の先頭の子要素 | [client.js:88](../lib/client.js#L88)、[client.js:376](../lib/client.js#L376) |
+| 開／閉 | frame に `data-sidebar-collapsed` が無ければ開、あれば閉。frame が無ければ常に閉として扱う | [client.js:312-315](../lib/client.js#L312-L315) |
+| 右パネル展開 | `ctx.sidebarRight.isExpanded()` が true | [client.js:538](../lib/client.js#L538) |
+| オーバーレイ | `document.body` の子要素で、computed `position` が `fixed` のもの（DSH のメニュー・モーダル・トースト、本プラグインの FAB） | [client.js:328-361](../lib/client.js#L328-L361) |
 
 768–1023px は DSH 本体の狭幅挙動（<1024px でレール化し、トグルでオーバーレイ展開）に任せ、本プラグインはレイアウトを変えない。
 
@@ -44,25 +45,33 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | `data-lexical-editor` | チャット入力欄 | 16px 化の対象 |
 | `ctx.layout.toggleSidebar()` | ui-layout `LayoutController`。<1024px では `narrowExpanded` を反転する | 開閉の唯一の操作経路 |
 | `ctx.sidebarRight.isExpanded()` / `toggleExpanded()` | ui-sidebar-right。`isExpanded` は画面上のサーフェスが無ければ false | 右パネルを畳む |
+| `[data-row-key^="session:"][role=treeitem]`（セッション行）と、その子の順序 slot → title → time? → pin（`role=img`）? → rowActions?（「…」ボタンを含む最後の子） | ui-workspace `SessionNodeItem`（同パッケージの `lib/client.js` 1571–1684 行）。time と rowActions は blank 行に無い | §4.4 の行 CSS と dblclick 抑止。**子の順序は構造依存（○）**で、ハッシュ化クラス名は使わない |
+| `ctx.sessions.list`（`ObservableSnapshot<SessionListState>`：`getSnapshot()` / `subscribe()`）と、行の `retainedBy.mainView > 0` が表示中を表すこと | api-session-controller `ISessions`（`lib/types/client/contract/sessions.d.ts`）。ui-workspace も同じ判定をする | 表示中セッションの切替の検知（§4.4）。**任意依存** |
+| `ctx.inject(names, callback)` | cordis 4.0.4 の registry（mixin で `ctx` に出る） | 任意依存のサービスを待つ |
 | `document.body` へ portal される固定オーバーレイ | ui-primitives `MenuSurface`、model-selection `ModelSelect`（`createPortal(..., document.body)`）、Modal、Toast（0.2.0-rc.2 で確認） | 座標系の補正対象（§6） |
 
-不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:312](../lib/client.js#L312)）。
+不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:373](../lib/client.js#L373)）。
 これは全面的な無介入への復帰ではない。次の介入は残る。
 - `#root` の高さ、入力 16px、セーフエリア、viewport meta（frame に依存しない）
 - スワイプ: frame が無くても isOpen()=false なので、右スワイプで `toggleSidebar()` を呼びうる。frame 外起点を除外するガード（§5.1 `SwipeOnlyInsideFrame`）は、境界を決められないため掛けない
 
 子の順序だけが変わった場合は CSS が一致し続け、別の先頭要素を fixed／inert にする。この場合は劣化ではなく誤作動になる。
 
+セッション行の子の順序（§4.4）が変わった場合も同様に、別の子の `display` を固定しうる（誤作動）。属性 `data-row-key` / `role=treeitem` が無くなれば一致しなくなり、DSH 既定の hover 表示へ戻る（劣化）。
+
+不変条件 `OptionalSessions`: `sessions` は必須の `inject`（`["layout","sidebarRight"]`）に入れない。cordis は必須依存が揃うまで `apply` を呼ばないため、入れると `ctx.sessions` が無い構成で本プラグイン全体が起動しなくなる。
+`ctx.inject(["sessions"], …)` の子 fiber で待ち、提供されたときだけ §4.4 の切替検知を有効にする。`ctx.inject` が無い、または `list` の形が違う場合は切替検知だけを行わない。
+
 ## 4. ドロワー（`PHONE` のとき）
 
-### 4.1 レイアウト（CSS、[client.js:80-145](../lib/client.js#L80-L145)）
+### 4.1 レイアウト（CSS、[client.js:80-160](../lib/client.js#L80-L160)）
 - frame の `grid-template-columns` を `minmax(0,1fr) 0px 0px !important` にする。DSH がインライン style で指定する値より優先される。
 - sidebarCol を `position:fixed`、幅 `min(85vw,300px)`、`z-index:60` のドロワーにする。grid のフローから外れるため、centerCol が第 1 列に入る。
 - 閉時は `translateX(-110%)` と `visibility:hidden` で画面外へ出す。transition は .25s。`prefers-reduced-motion:reduce` では開閉どちらの transition も無効にする（閉時のセレクタと同じ詳細度の規則を reduced-motion 側に置く。KI-3）。
 - 開時は frame の `::after` を `z-index:59`、`rgba(0,0,0,.35)` の全面バックドロップとして表示する。
 - frame 直下の `[data-side]`（列リサイズ用ハンドル）を非表示にする。
 
-### 4.2 状態同期（[client.js:309-337](../lib/client.js#L309-L337)）
+### 4.2 状態同期（[client.js:370-398](../lib/client.js#L370-L398)）
 MutationObserver が文書全体の childList と `data-sidebar-collapsed` の変化を監視し、そのたびに次を同期する。`PHONE` の変化時にも同期する。
 
 | 出力 | 値 |
@@ -76,9 +85,9 @@ MutationObserver が文書全体の childList と `data-sidebar-collapsed` の�
 
 | 入力 | 条件 | 結果 | 根拠 |
 |---|---|---|---|
-| FAB の click | FAB は `PHONE ∧ body=closed` のときだけ表示される | トグル（開く） | [client.js:113-121](../lib/client.js#L113-L121)、[client.js:352-358](../lib/client.js#L352-L358) |
-| pointerdown（capture 段階） | `PHONE ∧ 開`、かつ target が sidebarCol 外・FAB 外・frame 内 | `preventDefault` と `stopPropagation` の後にトグル（閉じる） | [client.js:362-376](../lib/client.js#L362-L376) |
-| keydown `Escape` | `PHONE ∧ 開`、かつ `defaultPrevented` でなく、`[aria-modal=true]` が文書に無い（KI-7） | トグル（閉じる）。閉じが frame に反映され、`body=closed`（FAB 表示）に同期した時点で `fab.focus()` を呼ぶ（KI-1） | [client.js:389-398](../lib/client.js#L389-L398)（`onKeyDown`）、[client.js:309-337](../lib/client.js#L309-L337)（`syncState`） |
+| FAB の click | FAB は `PHONE ∧ body=closed` のときだけ表示される | トグル（開く） | [client.js:113-121](../lib/client.js#L113-L121)、[client.js:413-419](../lib/client.js#L413-L419) |
+| pointerdown（capture 段階） | `PHONE ∧ 開`、かつ target が sidebarCol 外・FAB 外・frame 内 | `preventDefault` と `stopPropagation` の後にトグル（閉じる） | [client.js:423-437](../lib/client.js#L423-L437) |
+| keydown `Escape` | `PHONE ∧ 開`、かつ `defaultPrevented` でなく、`[aria-modal=true]` が文書に無い（KI-7） | トグル（閉じる）。閉じが frame に反映され、`body=closed`（FAB 表示）に同期した時点で `fab.focus()` を呼ぶ（KI-1） | [client.js:450-459](../lib/client.js#L450-L459)（`onKeyDown`）、[client.js:370-398](../lib/client.js#L370-L398)（`syncState`） |
 
 不変条件 `EscapeRefocusesFab`: Escape で閉じたとき、FAB へのフォーカスは `body[data-dsh-mobile-sidebar=closed]` に更新した後に行う（`toggleSidebar()` は DSH のストアを更新するだけで、`data-sidebar-collapsed` は再描画で後から変わるため）。予約は Escape から 1 秒以内の最初の閉で消費する。Escape 以外の経路（FAB・バックドロップ・スワイプ）でトグルすると予約を取り消すので、その経路の閉ではフォーカスを動かさない。予約が有効な間（閉の反映待ち）の Escape は無視する（`isOpen()` が古い値を返し、再トグルで開に戻るのを防ぐ）。
 
@@ -86,11 +95,27 @@ MutationObserver が文書全体の childList と `data-sidebar-collapsed` の�
 
 不変条件 `BackdropOnlyInsideFrame`: frame 外の target（`document.body` 直下へ portal される Modal やメニューなど）への pointerdown では、ドロワーを閉じない。
 
+### 4.4 セッション行（T309）
+DSH 0.2.0-rc.2 の行 CSS は `:hover` で「…」（rowActions）を表示し、時刻とピンを隠す（`@media (hover:hover)` で囲まれていない）。iOS WebKit は、タップで合成した `:hover` で表示が変わるとその回の click を配送しないとされ、行を開くのに 2 タップ要る原因と推定している（実機未確認。ADR-20261026-1745）。
+
+| 介入 | 条件 | 内容 | 根拠 |
+|---|---|---|---|
+| 行の表示固定（CSS） | `COARSE` | 行の最後の子でボタンを含むもの（rowActions）を `display:inline-flex !important`、3 番目以降で最後でも `role=img` でもない子（time）を `display:inline !important`、`role=img` の子（ピン）を `display:inline-flex !important` にする | [client.js:145-159](../lib/client.js#L145-L159) |
+| dblclick の抑止 | `COARSE`、target がセッション行内 | document の capture 段階で `preventDefault` と `stopPropagation`。DSH のタイトル `onDoubleClick`（改名ダイアログ）に届かない。改名は「…」メニューから行う | [client.js:582-597](../lib/client.js#L582-L597) |
+| 切替時にドロワーを閉じる | `ctx.sessions` があり、`PHONE ∧ 開` | `ctx.sessions.list` の通知ごとに、`retainedBy.mainView > 0` の id 集合を前回と比べ、前回に無かった id が現れたら `toggleSidebar()` を 1 回呼ぶ | [client.js:167-206](../lib/client.js#L167-L206)、[client.js:604-611](../lib/client.js#L604-L611) |
+
+不変条件:
+- `RowStableUnderHover`: `COARSE` では、セッション行の子の表示（「…」・時刻・ピン）が `:hover` の有無で変わらない。
+- `NoRenameOnDoubleTap`: `COARSE` では、セッション行内の dblclick を DSH 本体へ届けない。fine pointer では従来どおり。
+- `CloseOnSessionSwitch`: 表示中セッションが別の id に切り替わるたびに、`PHONE ∧ 開` ならドロワーを 1 回だけ閉じる。DSH の `replaceMain` は新参照を retain してから旧参照を release するので、一瞬 2 件が表示中になるが、新しい id が現れた通知でだけ反応する。閉じているとき、`PHONE` でないとき、表示中の集合に新しい id が無い通知（旧の release、一覧の他の更新）では何もしない。
+  行のクリック以外の経路（新規作成・検索結果・fork 等）も同じく閉じる。
+  `toggleSidebar()` の結果は再描画で後から DOM に反映されるため、閉を要求してから 1 秒間は、DOM が開のままでも再要求しない（反映前の連続切替で開き直さないため）。
+
 ## 5. スワイプ（`COARSE` のとき）
 
 document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定する。`preventDefault` は呼ばないため、ネイティブのスクロールを妨げない（ADR-20261023-1750）。
 
-### 5.1 候補の確定（touchstart、[client.js:424-453](../lib/client.js#L424-L453)）
+### 5.1 候補の確定（touchstart、[client.js:485-514](../lib/client.js#L485-L514)）
 - 候補になるのは、`COARSE` かつ単指で、ピンチズーム中（`|visualViewport.scale − 1| > 0.01`、§6）でなく、`textarea,input,[contenteditable=true]` の外から始まり、`SwipeOnlyInsideFrame` を満たすタッチだけ。
 - 不変条件 `SwipeOnlyInsideFrame`（KI-5）: frame があるとき、起点が frame 外（`document.body` へ portal されたモーダル・メニュー・トーストなど）のタッチは候補にしない。
   pointerdown の `BackdropOnlyInsideFrame` と同じ境界にそろえる。例外は FAB（frame 外だが、本プラグインの開く操作の起点なので候補にする）。
@@ -102,7 +127,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
   開始時の座標・`edge`・横スクロール祖先は変化前のレイアウトで測ったものだから。幅の変わらない `resize`（§6 で本プラグインがキーボードの出入りごとに再送するもの）では破棄しない。
   （Idea from kuraneko1/dsh-mobile-maxxing 24e2e49, MIT。実装は独自）
 
-### 5.2 判定（touchend、[client.js:454-491](../lib/client.js#L454-L491)）
+### 5.2 判定（touchend、[client.js:515-552](../lib/client.js#L515-L552)）
 `dx`、`dy` は終了点と開始点の差で、途中の軌跡は見ない。上から順に評価し、最初に該当した行で決まる。
 
 | # | 条件 | 結果 |
@@ -132,7 +157,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 ## 6. viewport・キーボード・セーフエリア
 
-- **viewport meta**（ADR-20261026-1450、[client.js:171-202](../lib/client.js#L171-L202)）: `meta[name=viewport]` があれば、content を項目単位でマージする。meta が無い場合は新規作成しない。この書換は幅にもポインタにも依存しない。
+- **viewport meta**（ADR-20261026-1450、[client.js:232-263](../lib/client.js#L232-L263)）: `meta[name=viewport]` があれば、content を項目単位でマージする。meta が無い場合は新規作成しない。この書換は幅にもポインタにも依存しない。
   - 管理項目は `width=device-width`、`initial-scale=1`、`viewport-fit=cover`、`interactive-widget=resizes-content` の 4 つ。
     content を `,` または `;`（混在可）で項目に分け（前後の空白と空の項目は捨てる）、key（`=` の前、大文字小文字を区別しない）で照合する。
     管理項目は最初の出現位置で置き換え、同じ key の 2 つ目以降は消す。無ければ末尾へ足す。それ以外の項目は表記と順序を保つ。区切りは `, ` で書き出す。
@@ -163,7 +188,8 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 ## 7. ライフサイクル
 
-- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:521-523](../lib/client.js#L521-L523)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
+- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:599-601](../lib/client.js#L599-L601)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
+- 例外: §4.4 の切替検知は `ctx.inject` の子 fiber の effect に置く（`OptionalSessions`）。親 fiber の停止、または `sessions` サービスの撤去で購読を外す。
 - `style[data-plugin-css="dsh-mobile-ui/override.css"]` が既にあれば、style タグを重ねて挿入しない。この場合、既存のタグは本 effect の撤去対象にならない。
 - 撤去手段は、`cordis.patch.yml` の insert を削除することと、ページを再読込すること（README）。
 
@@ -171,8 +197,9 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 - 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。iPad と Android は未確認。
   ピンチズームの許可と `PinchFreezesRoot`（ADR-20261026-1450、KI-2・KI-8）は実機未確認。
+  §4.4 のセッション行（ADR-20261026-1745）は実機未確認。happy-dom は `(pointer:coarse)` と `:has()` を組み合わせた規則・`:hover`・iOS の click 抑止を再現できないため、CSS は文字列と、media を外した規則の当たり方で検査している。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、34 件）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、38 件）。各テストは名前の `[§n]` で本書の節に対応する。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
 
 ## 9. 既知の問題・未確定事項

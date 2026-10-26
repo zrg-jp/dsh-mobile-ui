@@ -618,3 +618,130 @@ test("[§5.2 行5a DrawerShadowsRightPanel] ドロワー表示中の右スワイ
 	assert.deepEqual(h.calls, { toggleSidebar: 1, toggleExpanded: 0 });
 	h.close();
 });
+
+// ---- §4.4 セッション行（T309） ----
+
+/** DSH 0.2.0-rc.2 の SessionNodeItem と同じ子の順序の行を sidebarCol に置く（slot, title, time, pin?, rowActions）。 */
+const addSessionRow = (h, { id = "s1", pinned = false, blank = false } = {}) => {
+	const row = h.document.createElement("div");
+	row.setAttribute("data-row-key", `session:${id}`);
+	row.setAttribute("role", "treeitem");
+	row.className = "R_sessionRow";
+	row.innerHTML = blank
+		? '<span class="R_slot"></span><span class="R_title">New</span>'
+		: `<span class="R_slot"></span><span class="R_title">t</span><span class="R_time">1m</span>${pinned ? '<span class="R_pin" role="img"></span>' : ""}<span class="R_rowActions"><button type="button" aria-label="actions">…</button></span>`;
+	h.el("side").append(row);
+	return row;
+};
+/** DSH の行 CSS（ハッシュ化クラス）の hover 切替を模した規則。 */
+const addRowCss = (h) => {
+	const s = h.document.createElement("style");
+	s.textContent = ".R_rowActions{display:none}.R_sessionRow:hover .R_rowActions{display:inline-flex}.R_sessionRow:hover .R_time,.R_sessionRow:hover .R_pin{display:none}.R_pin{display:inline-flex}";
+	h.document.head.append(s);
+};
+
+test("[§4.4 RowStableUnderHover] COARSE ではセッション行の「…」を常時表示し、hover で時刻・ピンの表示を変えない（T309-A）", async () => {
+	// happy-dom は (pointer:coarse) と :has(...) の組合せを評価できないため（20.x で確認）、注入 CSS の構造で検査する。
+	const h = mount();
+	const css = h.document.querySelector("style[data-plugin=dsh-mobile-ui]").textContent;
+	const coarseBlock = /@media \(max-width:1023px\) and \(pointer:coarse\)\{([^@]*)\}/g;
+	const blocks = [...css.matchAll(coarseBlock)].map((m) => m[1]).join("\n");
+	assert.match(blocks, /\[data-row-key\^="session:"\]\[role=treeitem\]>:last-child:has\(button\)\{display:inline-flex !important;\}/);
+	assert.match(blocks, /\[data-row-key\^="session:"\]\[role=treeitem\]>:nth-child\(n\+3\):not\(:last-child\):not\(\[role=img\]\)\{display:inline !important;\}/);
+	assert.match(blocks, /\[data-row-key\^="session:"\]\[role=treeitem\]>\[role=img\]\{display:inline-flex !important;\}/);
+	// ハッシュ化クラス名（DSH の YDXeBa_ 等）や [class*=] には依存しない（spec §3）。
+	assert.doesNotMatch(css, /class\*=|YDXeBa_/);
+	h.close();
+	// セレクタが実際の行の形（子の順序）で意図した子に当たることを、media を外した規則で確かめる。
+	const t = mount();
+	addRowCss(t);
+	const rule = [...css.matchAll(coarseBlock)].map((m) => m[1]).find((b) => b.includes("data-row-key"));
+	const s = t.document.createElement("style");
+	s.textContent = rule.replace(":has(button)", "");
+	t.document.head.append(s);
+	const row = addSessionRow(t, { pinned: true });
+	const [, title, time, pin, actions] = row.children;
+	const display = (el) => t.window.getComputedStyle(el).display;
+	assert.equal(display(actions), "inline-flex", "「…」");
+	assert.equal(display(time), "inline", "時刻");
+	assert.equal(display(pin), "inline-flex", "ピン");
+	assert.notEqual(display(title), "none", "タイトルは触らない");
+	t.close();
+});
+
+test("[§4.4 NoRenameOnDoubleTap] COARSE ではセッション行の dblclick を本体へ届けない（T309）", async () => {
+	const h = mount();
+	const row = addSessionRow(h);
+	let renamed = 0;
+	// DSH の onDoubleClick は #root の React 委譲リスナー（bubble）で受ける。
+	h.el("root").addEventListener("dblclick", () => { renamed++; });
+	row.children[1].dispatchEvent(new h.window.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+	assert.equal(renamed, 0);
+	// 行の外の dblclick（チャット本文の単語選択など）には触らない。
+	h.el("msg").dispatchEvent(new h.window.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+	assert.equal(renamed, 1);
+	h.close();
+	// fine pointer（デスクトップ）では従来どおり改名できる。
+	const d = mount({ coarse: false });
+	const drow = addSessionRow(d);
+	let drenamed = 0;
+	d.el("root").addEventListener("dblclick", () => { drenamed++; });
+	drow.children[1].dispatchEvent(new d.window.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+	assert.equal(drenamed, 1);
+	d.close();
+});
+
+test("[§4.4 CloseOnSessionSwitch] PHONE でドロワーが開いているとき、表示中のセッションが変わったら閉じる（T309-C）", async () => {
+	const h = mount();
+	h.setMainSessions(["a"]);
+	await open(h);
+	assert.equal(h.calls.toggleSidebar, 1);
+	// 一覧の他の更新（表示中は同じ）では閉じない。
+	h.setMainSessions(["a"], ["b"]);
+	assert.equal(h.calls.toggleSidebar, 1);
+	// replaceMain: 新参照の retain（一瞬 2 件）→ 旧参照の release。閉じるのは 1 回だけ。
+	h.setMainSessions(["a", "b"]);
+	await h.flush();
+	assert.equal(h.calls.toggleSidebar, 2);
+	assert.equal(h.document.body.dataset.dshMobileSidebar, "closed");
+	h.setMainSessions(["b"]);
+	assert.equal(h.calls.toggleSidebar, 2);
+	// 閉じているときに切り替わっても開かない（toggle を呼ばない）。
+	h.setMainSessions(["c"]);
+	assert.equal(h.calls.toggleSidebar, 2);
+	h.close();
+	// DSH の実装どおり、閉が再描画で後から DOM に反映される場合: 反映前に a→b→c と続けて切り替わっても、
+	// 2 回目のトグルで開き直さない（独立レビューの指摘）。
+	const a = mount();
+	a.setMainSessions(["a"]);
+	await open(a);
+	const sync = a.ctx.layout.toggleSidebar.bind(a.ctx.layout);
+	a.ctx.layout.toggleSidebar = () => { a.calls.toggleSidebar++; setTimeout(sync, 5); };
+	a.setMainSessions(["a", "b"]);
+	a.setMainSessions(["b"]);
+	a.setMainSessions(["b", "c"]);
+	await new Promise((r) => setTimeout(r, 20));
+	assert.equal(a.calls.toggleSidebar, 3, "open 1 回 + 閉 1 回（偽装の sync 呼出も数える）");
+	assert.equal(a.document.body.dataset.dshMobileSidebar, "closed");
+	a.close();
+	// PHONE でなければ（768–1023px は DSH 本体の挙動に任せる）閉じない。
+	const w = mount({ width: 900 });
+	w.setMainSessions(["a"]);
+	w.ctx.layout.toggleSidebar();
+	w.setMainSessions(["b"]);
+	assert.equal(w.calls.toggleSidebar, 1);
+	w.close();
+});
+
+test("[§3 OptionalSessions] ctx.sessions が無くても他の機能は動き、dispose で購読を外す（T309-C）", async () => {
+	const h = mount({ withSessions: false });
+	h.document.querySelector(".dsh-mobile-ui-fab").click();
+	await h.flush();
+	assert.equal(h.document.body.dataset.dshMobileSidebar, "open");
+	h.close();
+	const t = mount();
+	assert.equal(t.sessionListeners(), 1);
+	t.dispose();
+	assert.equal(t.sessionListeners(), 0, "dispose で購読解除");
+	t.close();
+});

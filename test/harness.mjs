@@ -23,8 +23,9 @@ const FRAME_HTML = `<div id="root"><div id="frame" data-sidebar-collapsed>
  * @param {boolean} [opt.coarse=true] (pointer:coarse) の真偽
  * @param {boolean} [opt.withFrame=true] AppFrame を描画するか
  * @param {boolean} [opt.reducedMotion=false] prefers-reduced-motion:reduce を CSS の media で一致させるか
+ * @param {boolean} [opt.withSessions=true] 任意サービス ctx.sessions を提供するか（T309-C）
  */
-export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false, viewport = "width=device-width, initial-scale=1", scale = 1 } = {}) {
+export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false, viewport = "width=device-width, initial-scale=1", scale = 1, withSessions = true } = {}) {
 	// prefers-reduced-motion は happy-dom の device 設定で CSS のカスケードに反映される（20.14.6 で確認）。
 	const window = new Window({ width, height, url: "http://localhost/", settings: { device: { prefersReducedMotion: reducedMotion ? "reduce" : "no-preference" } } });
 	const document = window.document;
@@ -91,7 +92,33 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 			toggleExpanded() { calls.toggleExpanded++; rightExpanded = !rightExpanded; }
 		},
 		effects: [],
-		effect(fn) { this.effects.push(fn()); }
+		effect(fn) { this.effects.push(fn()); },
+		// cordis の ctx.inject 相当: 名前のサービスが全部あるときだけ callback を呼ぶ（任意依存）。
+		// 子 scope の effect も同じ effects に積み、dispose で一緒に撤去する。
+		inject(names, callback) {
+			if (!names.every((name) => services[name] !== undefined)) return;
+			const scope = { ...services, effect: (fn) => { ctx.effects.push(fn()); } };
+			callback(scope);
+		}
+	};
+	// 任意サービス（ctx.inject で待つもの）。sessions は ISessions.list の最小形（getSnapshot / subscribe）。
+	const services = {};
+	const sessionList = { snapshot: { byId: {} }, listeners: new Set() };
+	if (withSessions) {
+		services.sessions = {
+			list: {
+				getSnapshot: () => sessionList.snapshot,
+				subscribe: (fn) => { sessionList.listeners.add(fn); return () => sessionList.listeners.delete(fn); }
+			}
+		};
+	}
+	/** mainView で retain されているセッション id を指定して通知する（DSH の replaceMain は一瞬 2 件になる）。 */
+	const setMainSessions = (ids, others = []) => {
+		const byId = {};
+		for (const id of others) byId[id] = { id, retainedBy: {} };
+		for (const id of ids) byId[id] = { id, retainedBy: { mainView: 1 } };
+		sessionList.snapshot = { byId };
+		for (const fn of [...sessionList.listeners]) fn();
 	};
 
 	let plugin = null;
@@ -104,7 +131,8 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 	const flush = () => new Promise((r) => setTimeout(r, 0));
 	const dispose = () => { for (const d of ctx.effects.splice(0)) d?.(); };
 	return {
-		window, document, ctx, calls, flush, dispose, setViewport, visualViewport,
+		window, document, ctx, calls, flush, dispose, setViewport, visualViewport, setMainSessions,
+		sessionListeners: () => sessionList.listeners.size,
 		resizeCount: () => windowResizes,
 		setRightExpanded: (v) => { rightExpanded = v; },
 		// DSH の Modal 相当（createPortal(..., document.body) される全画面の前面レイヤ）を body 直下に足し、
