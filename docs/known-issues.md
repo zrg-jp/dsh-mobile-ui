@@ -1,7 +1,7 @@
 # 既知の問題
 
-対象: `lib/client.js`（ブランチ `fix/ki-8-pinch-zoom` 時点）、`@deepseek-ai/dsh-web-app` 0.2.0-rc.2。
-各項目は GitHub issue（#1〜#8、#11）に転記済み。進捗と議論は issue で扱い、確定した仕様の変更は spec.md に反映する。
+対象: `lib/client.js`（ブランチ `feat/chrome-terminal` 時点）、`@deepseek-ai/dsh-web-app` 0.2.0-rc.2。
+各項目は GitHub issue（#1〜#8、#11、#12）に転記済み。進捗と議論は issue で扱い、確定した仕様の変更は spec.md に反映する。
 特記のない限り、コードと DSH 配布物を読んで導いた推定であり、実機では観測していない。
 
 **モバイルへの影響の目安**: iPhone のソフトウェアキーボードには Escape キーが無い。そのため Escape 起点の問題（KI-1、KI-7）は、
@@ -19,6 +19,7 @@
 | KI-9 | 入力欄をタップすると、入力欄が画面の上へ外れていく | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-0450、2026-10-24 に実機で確認） |
 | KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
 | KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/HARU-pc/dsh-mobile-ui/issues/11)） |
+| KI-11 | FAB が会話のセッション名・右パネルのファイル名の先頭を隠す | スマホ | 対応済み・実機確認待ち（ADR-20261026-1800、[#12](https://github.com/HARU-pc/dsh-mobile-ui/issues/12)） |
 
 ## KI-1 Escape で閉じた後、フォーカスが FAB に戻らない（旧 Q1）
 
@@ -143,3 +144,12 @@
   そのパン量だけ上へずれる。旧実装の `scrollTo(0,0)` は iOS のフォーカス時スクロールと競合した。また html/body に
   スクロールの余地が残っていた。
 - **対応**: ADR-20261024-0450（`#root` を fixed にして visual viewport へ追従させる）。2026-10-24 にオーナーが iPhone PWA で確認し、解決とした。
+
+## KI-11 FAB が会話のセッション名・右パネルのファイル名の先頭を隠す（issue #12）
+
+- **現象**: スマホ幅でドロワーが閉じているとき、左上の FAB（右端 = `safe-left + 46px`）が会話ヘッダのセッション名の先頭と、
+  右パネル（<768px で全画面）のタブ列・ファイル名の先頭に重なる。
+- **対応（実機確認待ち）**: ADR-20261026-1800。閉時の frame に DSH 自身の変数 `--dsh-frame-leading-clearance` を与え、会話ヘッダのタイトルを
+  FAB の右から始める（DSH 0.2.0-rc.2 の ui-conversation が参照する）。右パネル展開中は FAB を隠す（spec.md §4.5）。
+  右パネルからサイドバーへは、右パネルを閉じるボタンか左端からの右スワイプで畳んでから FAB を使う。
+- **残る制限**: 全画面ルート（Plugins / Schedules など）の見出しと FAB の重なりは扱っていない。DSH が変数の参照をやめると、重なる元の表示へ戻る。
