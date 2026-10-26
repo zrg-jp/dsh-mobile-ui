@@ -160,9 +160,43 @@ test("[§5.2 行4/8] 横スクロール祖先: 左端なら右スワイプ可、
 test("[§6] viewport meta を書換え、dispose で元に戻す", async () => {
 	const h = mount();
 	const meta = h.document.querySelector("meta[name=viewport]");
-	assert.match(meta.getAttribute("content"), /viewport-fit=cover/);
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content");
 	h.dispose();
 	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1");
+	h.close();
+});
+
+test("[§6 ViewportMerge] 既存の項目は順序ごと保ち、必要な項目だけ上書き・追加する", async () => {
+	// ページ側の未知の項目（height など）と、重複・空白・大文字の混在を含む content。
+	const h = mount({ viewport: " Width=980 ,height=device-height,,initial-scale=2, initial-scale=3, minimum-scale=0.5" });
+	const meta = h.document.querySelector("meta[name=viewport]");
+	assert.equal(
+		meta.getAttribute("content"),
+		"width=device-width, height=device-height, initial-scale=1, minimum-scale=0.5, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+	);
+	h.dispose();
+	// 他者が触っていなければ、元の文字列をそのまま戻す（正規化した形にしない）。
+	assert.equal(meta.getAttribute("content"), " Width=980 ,height=device-height,,initial-scale=2, initial-scale=3, minimum-scale=0.5");
+	h.close();
+});
+
+test("[§6 ViewportMerge] content 属性が無ければ必要な項目だけで作り、dispose で属性ごと消す", async () => {
+	const h = mount({ viewport: null });
+	const meta = h.document.querySelector("meta[name=viewport]");
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content");
+	h.dispose();
+	assert.equal(meta.hasAttribute("content"), false);
+	h.close();
+});
+
+test("[§6 ViewportMerge] 起動後に他者が meta を変えていたら、dispose は本プラグインの項目だけを戻す", async () => {
+	const h = mount({ viewport: "width=device-width, initial-scale=1, viewport-fit=auto" });
+	const meta = h.document.querySelector("meta[name=viewport]");
+	// 別の介入者（DSH 本体や他プラグイン）が後から項目を足した状態。
+	meta.setAttribute("content", `${meta.getAttribute("content")}, theme-x=1`);
+	h.dispose();
+	// width / initial-scale は元の値、viewport-fit は元の auto、追加した interactive-widget は消え、theme-x は残る。
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, viewport-fit=auto, theme-x=1");
 	h.close();
 });
 

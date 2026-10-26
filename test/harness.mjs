@@ -23,10 +23,12 @@ const FRAME_HTML = `<div id="root"><div id="frame" data-sidebar-collapsed>
  * @param {boolean} [opt.coarse=true] (pointer:coarse) の真偽
  * @param {boolean} [opt.withFrame=true] AppFrame を描画するか
  */
-export function mount({ width = 390, height = 800, coarse = true, withFrame = true } = {}) {
+export function mount({ width = 390, height = 800, coarse = true, withFrame = true, viewport = "width=device-width, initial-scale=1" } = {}) {
 	const window = new Window({ width, height, url: "http://localhost/" });
 	const document = window.document;
-	document.write(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${withFrame ? FRAME_HTML : '<div id="root"></div>'}</body></html>`);
+	// viewport: 起動前の meta content（既定は DSH 0.2.0-rc.2 の dist/index.html と同じ値）。null なら content 属性なし。
+	const metaAttr = viewport === null ? "" : ` content="${viewport}"`;
+	document.write(`<!doctype html><html><head><meta name="viewport"${metaAttr}></head><body>${withFrame ? FRAME_HTML : '<div id="root"></div>'}</body></html>`);
 
 	// happy-dom の matchMedia は pointer 特性を評価しないため、幅と coarse を明示的に解く置換を入れる。
 	const media = new Map();
