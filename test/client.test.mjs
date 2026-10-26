@@ -145,6 +145,35 @@ test("[§5.2 行7 OpenOnlyWhenClosedPhone] 右スワイプは起点の位置を�
 	edge.close();
 });
 
+test("[§5.1 SwipeOnlyInsideFrame] frame 外（portal されたモーダル）起点のスワイプは背後を操作しない（KI-5）", async () => {
+	const h = mount();
+	const modal = h.addPortal();
+	// 閉: 右スワイプでも背後のサイドバーを開かない。
+	swipe(h, modal, [20, 100], [100, 100]);
+	assert.deepEqual(h.calls, { toggleSidebar: 0, toggleExpanded: 0 });
+	// 右パネル展開中: 左端起点でも畳まない。
+	h.setRightExpanded(true);
+	swipe(h, modal, [10, 100], [100, 100]);
+	assert.deepEqual(h.calls, { toggleSidebar: 0, toggleExpanded: 0 });
+	h.setRightExpanded(false);
+	// 開: 左スワイプでも閉じない。
+	await open(h);
+	swipe(h, modal, [250, 100], [100, 100]);
+	assert.equal(h.calls.toggleSidebar, 1);
+	h.close();
+	// FAB は frame 外だが例外（タップと同じく開いてよい）。
+	const f = mount();
+	await f.flush();
+	swipe(f, f.document.querySelector(".dsh-mobile-ui-fab"), [20, 20], [100, 20]);
+	assert.equal(f.calls.toggleSidebar, 1);
+	f.close();
+	// frame が無いときはガードを掛けない（§3 SafeDegrade の範囲限定どおり、従来の判定に任せる）。
+	const n = mount({ withFrame: false });
+	swipe(n, n.addPortal(), [20, 100], [100, 100]);
+	assert.equal(n.calls.toggleSidebar, 1);
+	n.close();
+});
+
 test("[§5.2 行3] 閾値: |dx|=59 や縦優勢は無視", async () => {
 	const h = mount();
 	swipe(h, h.el("msg"), [10, 300], [69, 300]);

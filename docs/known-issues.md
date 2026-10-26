@@ -13,7 +13,7 @@
 | KI-2 | ピンチズームで `#root` の高さが縮む | KI-8 次第 | 保留（[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
 | KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
 | KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/HARU-pc/dsh-mobile-ui/issues/4)） |
-| KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 未着手（[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
+| KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
 | KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 記録のみ（[#6](https://github.com/HARU-pc/dsh-mobile-ui/issues/6)） |
 | KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 未着手（[#7](https://github.com/HARU-pc/dsh-mobile-ui/issues/7)） |
 | KI-9 | 入力欄をタップすると、入力欄が画面の上へ外れていく | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-0450、2026-10-24 に実機で確認） |
@@ -65,6 +65,10 @@
   背後の右パネルが展開中ならそれが畳まれ、そうでなければ背後のサイドバーが開く。
 - **修正案**: touchstart で起点が frame 外なら候補にしない（pointerdown と同じ境界にそろえる）。
   これは軽微な修正で、テストも書ける（`harness.mjs` に portal 要素を足す）。
+- **対応**: touchstart で、frame があり起点が frame 外なら候補にしない（spec §5.1 `SwipeOnlyInsideFrame`）。
+  判断: FAB（body 直下）は例外として候補に残す（FAB 上の右スワイプは「開く」と一致し、背後の誤操作ではないため）。
+  frame が無いとき（SafeDegrade）は境界が無いので掛けない（従来どおり）。テストは `harness.mjs` の `addPortal()`（role=dialog の全画面レイヤ）で行う。
+  残る制限: frame 内に描画される前面 UI（frame の子孫として描かれるポップオーバー等）は区別しない。
 
 ## KI-6 coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない（旧 Q9）
 

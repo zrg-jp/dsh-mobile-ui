@@ -49,7 +49,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:212](../lib/client.js#L212)）。
 これは全面的な無介入への復帰ではない。次の介入は残る。
 - `#root` の高さ、入力 16px、セーフエリア、viewport meta（frame に依存しない）
-- スワイプ: frame が無くても isOpen()=false なので、右スワイプで `toggleSidebar()` を呼びうる
+- スワイプ: frame が無くても isOpen()=false なので、右スワイプで `toggleSidebar()` を呼びうる。frame 外起点を除外するガード（§5.1 `SwipeOnlyInsideFrame`）は、境界を決められないため掛けない
 
 子の順序だけが変わった場合は CSS が一致し続け、別の先頭要素を fixed／inert にする。この場合は劣化ではなく誤作動になる。
 
@@ -90,6 +90,9 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 ### 5.1 候補の確定（touchstart、[client.js:305-323](../lib/client.js#L305-L323)）
 - 候補になるのは、`COARSE` かつ単指で、`textarea,input,[contenteditable=true]` の外から始まったタッチだけ。
+- 不変条件 `SwipeOnlyInsideFrame`（KI-5）: frame があるとき、起点が frame 外（`document.body` へ portal されたモーダル・メニュー・トーストなど）のタッチは候補にしない。
+  pointerdown の `BackdropOnlyInsideFrame` と同じ境界にそろえる。例外は FAB（frame 外だが、本プラグインの開く操作の起点なので候補にする）。
+  frame が無いとき（§3 SafeDegrade）はこのガードを掛けない。
 - 開始時に、起点座標、`edge = x ≤ 28`、横スクロール祖先の有無、全祖先が左端にあるか（`scrollLeft ≤ 0`）を記録する。
   横スクロール祖先とは、`scrollWidth > clientWidth+1` かつ `overflow-x` が `auto` / `scroll` の祖先要素を指す（body は含まない）。
 - `touchcancel` が来たら候補を破棄する。
@@ -118,7 +121,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 帰結として、768–1023px の coarse 端末（iPad 縦など）で有効なスワイプは、右パネルを畳む操作（行 5）だけになる。1024px 以上から始めたタッチはスワイプにならない（[KI-4](known-issues.md)）。`COARSE` と `PHONE` を検査する時点は異なる。`COARSE` は touchstart 時だけ、`PHONE` は touchend 時に検査する。
 
-起点の要素は限定しない。frame 外（`document.body` へ portal されたモーダルなど）から始まったタッチも判定対象になる（[KI-5](known-issues.md)）。
+起点の要素は frame 内と FAB に限る（§5.1 `SwipeOnlyInsideFrame`。KI-5 で変更）。
 
 ## 6. viewport・キーボード・セーフエリア
 
@@ -149,7 +152,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 - 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。iPad と Android は未確認。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、22 件）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、23 件）。各テストは名前の `[§n]` で本書の節に対応する。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
 
 ## 9. 既知の問題・未確定事項

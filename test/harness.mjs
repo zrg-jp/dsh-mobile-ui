@@ -102,6 +102,17 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 		window, document, ctx, calls, flush, dispose, setViewport, visualViewport,
 		resizeCount: () => windowResizes,
 		setRightExpanded: (v) => { rightExpanded = v; },
+		// DSH の Modal 相当（createPortal(..., document.body) される全画面の前面レイヤ）を body 直下に足し、
+		// その中の要素（タッチの起点）を返す。
+		addPortal: () => {
+			const layer = document.createElement("div");
+			layer.setAttribute("role", "dialog");
+			layer.setAttribute("aria-modal", "true");
+			layer.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;";
+			layer.innerHTML = "<p>modal</p>";
+			document.body.append(layer);
+			return layer.firstElementChild;
+		},
 		el: (id) => document.getElementById(id),
 		close: () => { dispose(); window.happyDOM.close(); }
 	};
