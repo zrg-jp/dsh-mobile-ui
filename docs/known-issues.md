@@ -9,7 +9,7 @@
 
 | ID | 概要 | 影響範囲 | 状態 |
 |---|---|---|---|
-| KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 未着手（[#1](https://github.com/HARU-pc/dsh-mobile-ui/issues/1)） |
+| KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#1](https://github.com/HARU-pc/dsh-mobile-ui/issues/1)） |
 | KI-2 | ピンチズームで `#root` の高さが縮む | KI-8 次第 | 保留（[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
 | KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 未着手（[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
 | KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/HARU-pc/dsh-mobile-ui/issues/4)） |
@@ -28,7 +28,10 @@
   フォーカスの行き先は UA 次第になる。
 - **期待**: 閉じた後、フォーカスが FAB に移る。
 - **修正案**: `syncState()` を先に同期的に呼んでから `focus()` する。または `requestAnimationFrame` の後で focus する。
-- **テスト**: happy-dom は `display:none` の要素でも focus できてしまう可能性があるため、検査の方法を併せて検討する。
+- **テスト**: happy-dom は `display:none` の要素でも focus できてしまう（20.14.6 で確認）ため、focus を呼んだ時点の body 属性で検査する。
+- **対応**: Escape でフォーカスの予約（期限 1 秒）を置き、`syncState()` が閉を観測して body 属性と inert を更新した直後に `fab.focus()` する。
+  DSH 0.2.0-rc.2 の `toggleSidebar()` はストア（`narrowExpanded`）を反転するだけで、frame の属性は再描画後に変わるため、
+  「toggle 直後に同期 syncState → focus」だけでは足りない（直後の syncState は呼ぶが、この時点ではまだ開のまま）。
 
 ## KI-2 ピンチズームで `#root` の高さが縮む（旧 Q3）
 

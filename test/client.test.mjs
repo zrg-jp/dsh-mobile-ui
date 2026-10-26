@@ -79,6 +79,39 @@ test("[§4.3] Escape で閉じる（PHONE・開のみ）", async () => {
 	h.close();
 });
 
+test("[§4.3 EscapeRefocusesFab] Escape で閉じた後、FAB が表示状態（body=closed）になってから focus する（KI-1）", async () => {
+	// happy-dom は display:none の要素にも focus できてしまうため、focus を呼んだ時点の body 属性で検査する。
+	const h = mount();
+	await open(h);
+	const fab = h.document.querySelector(".dsh-mobile-ui-fab");
+	const seen = [];
+	const original = fab.focus.bind(fab);
+	fab.focus = () => { seen.push(h.document.body.dataset.dshMobileSidebar); original(); };
+	h.document.dispatchEvent(new h.window.KeyboardEvent("keydown", { key: "Escape" }));
+	await h.flush();
+	assert.deepEqual(seen, ["closed"]);
+	assert.equal(h.document.activeElement, fab);
+	// 予約は 1 回で消費する: 後で別経路（バックドロップ）で閉じても FAB へ奪わない。
+	await open(h);
+	h.el("msg").dispatchEvent(new h.window.PointerEvent("pointerdown", { bubbles: true }));
+	await h.flush();
+	assert.deepEqual(seen, ["closed"]);
+	h.close();
+	// DSH の実装どおり、data-sidebar-collapsed が再描画で後から変わる場合も、変わった後に focus する。
+	const a = mount();
+	await open(a);
+	const afab = a.document.querySelector(".dsh-mobile-ui-fab");
+	const aseen = [];
+	afab.focus = () => { aseen.push(a.document.body.dataset.dshMobileSidebar); };
+	const sync = a.ctx.layout.toggleSidebar.bind(a.ctx.layout);
+	a.ctx.layout.toggleSidebar = () => { setTimeout(sync, 5); };
+	a.document.dispatchEvent(new a.window.KeyboardEvent("keydown", { key: "Escape" }));
+	assert.deepEqual(aseen, [], "閉じが反映される前には focus しない");
+	await new Promise((r) => setTimeout(r, 20));
+	assert.deepEqual(aseen, ["closed"]);
+	a.close();
+});
+
 // ---- §5.2 スワイプ判定表 ----
 test("[§5.2 行7 OpenOnlyWhenClosedPhone] 右スワイプは起点の位置を問わず開く", async () => {
 	// 起点が右半分（幅 390 の 300px）でも開く（ADR-20261026-1416）。

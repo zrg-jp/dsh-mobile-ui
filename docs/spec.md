@@ -78,7 +78,9 @@ MutationObserver が文書全体の childList と `data-sidebar-collapsed` の�
 |---|---|---|---|
 | FAB の click | FAB は `PHONE ∧ body=closed` のときだけ表示される | トグル（開く） | [client.js:47-55](../lib/client.js#L47-L55)、[client.js:245-249](../lib/client.js#L245-L249) |
 | pointerdown（capture 段階） | `PHONE ∧ 開`、かつ target が sidebarCol 外・FAB 外・frame 内 | `preventDefault` と `stopPropagation` の後にトグル（閉じる） | [client.js:254-268](../lib/client.js#L254-L268) |
-| keydown `Escape` | `PHONE ∧ 開` | トグル（閉じる）し、`fab.focus()` を呼ぶ | [client.js:275-279](../lib/client.js#L275-L279) |
+| keydown `Escape` | `PHONE ∧ 開` | トグル（閉じる）。閉じが frame に反映され、`body=closed`（FAB 表示）に同期した時点で `fab.focus()` を呼ぶ（KI-1） | client.js の `onKeyDown` / `syncState` |
+
+不変条件 `EscapeRefocusesFab`: Escape で閉じたとき、FAB へのフォーカスは `body[data-dsh-mobile-sidebar=closed]` に更新した後に行う（`toggleSidebar()` は DSH のストアを更新するだけで、`data-sidebar-collapsed` は再描画で後から変わるため）。予約は Escape から 1 秒以内の最初の閉で消費し、それ以外の経路の閉ではフォーカスを動かさない。
 
 不変条件 `BackdropOnlyInsideFrame`: frame 外の target（`document.body` 直下へ portal される Modal やメニューなど）への pointerdown では、ドロワーを閉じない。
 
@@ -147,7 +149,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 - 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。iPad と Android は未確認。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、20 件）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、21 件）。各テストは名前の `[§n]` で本書の節に対応する。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
 
 ## 9. 既知の問題・未確定事項
