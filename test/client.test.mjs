@@ -142,6 +142,35 @@ test("[§4.3 EscapeRefocusesFab] Escape で閉じた後、FAB が表示状態（
 	await new Promise((r) => setTimeout(r, 20));
 	assert.deepEqual(aseen, ["closed"]);
 	a.close();
+	// 反映待ちの間に Escape が重なっても再トグルしない（開に戻さない）。
+	const b = mount();
+	await open(b);
+	const bfab = b.document.querySelector(".dsh-mobile-ui-fab");
+	const bseen = [];
+	bfab.focus = () => { bseen.push(b.document.body.dataset.dshMobileSidebar); };
+	const bsync = b.ctx.layout.toggleSidebar.bind(b.ctx.layout);
+	b.ctx.layout.toggleSidebar = () => { setTimeout(bsync, 5); };
+	b.document.dispatchEvent(new b.window.KeyboardEvent("keydown", { key: "Escape" }));
+	b.document.dispatchEvent(new b.window.KeyboardEvent("keydown", { key: "Escape" }));
+	await new Promise((r) => setTimeout(r, 20));
+	assert.equal(b.calls.toggleSidebar, 2, "open + Escape 1 回分だけ");
+	assert.deepEqual(bseen, ["closed"]);
+	b.ctx.layout.toggleSidebar = bsync;
+	// 予約が反映前に別経路の開閉で取り消された場合、その後の閉で FAB へ奪わない。
+	const c = mount();
+	await open(c);
+	const cfab = c.document.querySelector(".dsh-mobile-ui-fab");
+	const cseen = [];
+	cfab.focus = () => { cseen.push("focus"); };
+	// Escape の toggle がストアにだけ効き DOM に反映されない状況を作る（閉が失われた）。
+	c.ctx.layout.toggleSidebar = () => {};
+	c.document.dispatchEvent(new c.window.KeyboardEvent("keydown", { key: "Escape" }));
+	c.ctx.layout.toggleSidebar = () => { c.calls.toggleSidebar++; c.el("frame").setAttribute("data-sidebar-collapsed", ""); };
+	c.el("msg").dispatchEvent(new c.window.PointerEvent("pointerdown", { bubbles: true }));
+	await c.flush();
+	assert.deepEqual(cseen, [], "バックドロップで閉じたときは FAB へ移さない");
+	c.close();
+	b.close();
 });
 
 // ---- §5.2 スワイプ判定表 ----
