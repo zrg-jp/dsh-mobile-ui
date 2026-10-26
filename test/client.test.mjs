@@ -189,6 +189,30 @@ test("[§6 ViewportMerge] 既存の項目は順序ごと保ち、必要な項目
 	h.close();
 });
 
+test("[§6 ViewportMerge] セミコロン区切り・混在区切りでも非管理項目を保つ", async () => {
+	const h = mount({ viewport: "width=980; height=device-height; user-scalable=yes, foo=1" });
+	const meta = h.document.querySelector("meta[name=viewport]");
+	assert.equal(
+		meta.getAttribute("content"),
+		"width=device-width, height=device-height, user-scalable=yes, foo=1, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+	);
+	// 他者変更後の dispose でも非管理項目は残る。
+	meta.setAttribute("content", `${meta.getAttribute("content")}; bar=2`);
+	h.dispose();
+	assert.equal(meta.getAttribute("content"), "width=980, height=device-height, user-scalable=yes, foo=1, bar=2");
+	h.close();
+});
+
+test("[§6 ViewportMerge] 他者が値を変えた・重複させた管理項目は dispose で触らない", async () => {
+	const h = mount();
+	const meta = h.document.querySelector("meta[name=viewport]");
+	meta.setAttribute("content", "width=device-width, initial-scale=2, viewport-fit=cover, viewport-fit=cover, interactive-widget=resizes-content");
+	h.dispose();
+	// initial-scale は他者の値、viewport-fit は重複（誰が書いたか判別できない）なので残す。interactive-widget は元に無いので消す。
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=2, viewport-fit=cover, viewport-fit=cover");
+	h.close();
+});
+
 test("[§6 ViewportMerge] content 属性が無ければ必要な項目だけで作り、dispose で属性ごと消す", async () => {
 	const h = mount({ viewport: null });
 	const meta = h.document.querySelector("meta[name=viewport]");
