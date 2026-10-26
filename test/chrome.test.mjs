@@ -1,4 +1,4 @@
-// docs/spec.md の §4.4（FAB とヘッダ・右パネル）、§6（セーフエリアの実測）を検査する。
+// docs/spec.md の §4.4（FAB とヘッダ・右パネル）、§6（セーフエリアの実測）、§5.3（ターミナルのタッチ）を検査する。
 // 見出しの [§n] は spec の節番号。client.test.mjs と分けるのは、並行ブランチとの競合を減らすため。
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -145,4 +145,160 @@ test("[§6 NativeGapOptIn] 条件の各項（standalone・縦向き・キーボ�
 	k.visualViewport.dispatchEvent(new k.window.Event("resize"));
 	assert.equal(attr(k), "detected");
 	k.close();
+});
+
+// ---- §5.3 ターミナルのタッチ（T311 / T343）----
+
+/** 単指の touchstart → touchmove* → touchend。moves は [x,y] の列。 */
+function drag(h, target, points) {
+	const { window } = h;
+	const mk = (p) => new window.Touch({ identifier: 1, target, clientX: p[0], clientY: p[1] });
+	const [first, ...rest] = points;
+	target.dispatchEvent(new window.TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [mk(first)], changedTouches: [mk(first)] }));
+	const moves = [];
+	for (const p of rest) {
+		const ev = new window.TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [mk(p)], changedTouches: [mk(p)] });
+		target.dispatchEvent(ev);
+		moves.push(ev);
+	}
+	const last = points[points.length - 1];
+	target.dispatchEvent(new window.TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [mk(last)] }));
+	return moves;
+}
+const wheelsOn = (h) => {
+	const got = [];
+	h.el("xscroll").addEventListener("wheel", (e) => got.push(e.deltaY));
+	return got;
+};
+
+test("[§5.3 TerminalTapFocuses] ターミナルのタップで helper textarea を同期的に focus する", async () => {
+	const h = mount({ terminal: true });
+	drag(h, h.el("xrows"), [[100, 100]]);
+	assert.equal(h.document.activeElement, h.el("xinput"));
+	h.close();
+});
+
+test("[§5.3 TerminalTapFocuses] DSH が先に focus 済み（キーボード無し）でも、タップで blur → focus し直す", async () => {
+	const h = mount({ terminal: true });
+	const input = h.el("xinput");
+	// DSH の表示時 effect 相当（ユーザー操作外の focus）。
+	input.focus();
+	const seen = [];
+	input.addEventListener("blur", () => seen.push("blur"));
+	input.addEventListener("focus", () => seen.push("focus"));
+	drag(h, h.el("xrows"), [[100, 100]]);
+	assert.deepEqual(seen, ["blur", "focus"]);
+	assert.equal(h.document.activeElement, input);
+	// キーボードが出ている（visualViewport が 100px を超えて縮んでいる）ときは閉じさせない。
+	seen.length = 0;
+	h.visualViewport.height = 800 - 300;
+	drag(h, h.el("xrows"), [[100, 100]]);
+	assert.deepEqual(seen, []);
+	h.close();
+});
+
+test("[§5.3] DOM から外れたターミナルの touchmove 登録は次のタッチで解放する", async () => {
+	const h = mount({ terminal: true });
+	const xterm = h.el("xterm");
+	const removed = [];
+	const orig = xterm.removeEventListener.bind(xterm);
+	xterm.removeEventListener = (type, ...rest) => { removed.push(type); return orig(type, ...rest); };
+	drag(h, h.el("xrows"), [[100, 300], [100, 250]]);
+	h.el("right").innerHTML = "";
+	touchStart(h, h.el("msg"), [100, 100]).end([100, 100]);
+	assert.deepEqual(removed, ["touchmove"]);
+	h.close();
+});
+
+test("[§5.3 TerminalTapFocuses] 読み取り専用・ドラッグ・COARSE 外・ズーム中・ターミナル外では focus しない", async () => {
+	const cases = [
+		["readOnly", (h) => { h.el("xinput").readOnly = true; }, {}],
+		["COARSE 外", () => {}, { coarse: false }],
+		["ピンチズーム中", () => {}, { scale: 2 }]
+	];
+	for (const [why, prep, opt] of cases) {
+		const h = mount({ terminal: true, ...opt });
+		prep(h);
+		drag(h, h.el("xrows"), [[100, 100]]);
+		assert.notEqual(h.document.activeElement, h.el("xinput"), why);
+		h.close();
+	}
+	const d = mount({ terminal: true });
+	drag(d, d.el("xrows"), [[100, 100], [100, 140]]);
+	assert.notEqual(d.document.activeElement, d.el("xinput"), "縦ドラッグ（スクロール）");
+	// touchmove が届かなくても、終了点が閾値を超えていればタップではない。
+	drag(d, d.el("xrows"), [[100, 100]].concat([]));
+	d.el("xinput").blur();
+	touchStart(d, d.el("xrows"), [100, 100]).end([100, 120]);
+	assert.notEqual(d.document.activeElement, d.el("xinput"), "終了点が離れている");
+	touchStart(d, d.el("msg"), [100, 100]).end([100, 100]);
+	assert.notEqual(d.document.activeElement, d.el("xinput"), "ターミナル外");
+	d.close();
+});
+
+test("[§5.3 TerminalDragScrolls] 縦ドラッグを合成 wheel（deltaY = −Δy×0.8、Δy は ±32 でクランプ）に変える", async () => {
+	const h = mount({ terminal: true });
+	const got = wheelsOn(h);
+	// 6px 以内は保留（タップかもしれない）、超えた最初の移動から送る。
+	const moves = drag(h, h.el("xrows"), [[100, 300], [100, 296], [100, 280], [100, 200], [100, 190]]);
+	assert.deepEqual(got, [16, 32 * 0.8, 8]);
+	assert.equal(moves[0].defaultPrevented, false, "閾値内は既定動作を止めない");
+	assert.equal(moves[1].defaultPrevented, true, "スクロール中はネイティブのスクロール・パンを止める");
+	h.close();
+});
+
+test("[§5.3 TerminalDragScrolls] 横優位・2 本指・ズーム中は wheel を送らず、ターミナル外では何もしない", async () => {
+	const h = mount({ terminal: true });
+	const got = wheelsOn(h);
+	const moves = drag(h, h.el("xrows"), [[100, 300], [140, 305], [100, 250]]);
+	assert.deepEqual(got, [], "横で始まったら最後まで追わない");
+	assert.equal(moves.some((m) => m.defaultPrevented), false);
+	h.visualViewport.scale = 2;
+	drag(h, h.el("xrows"), [[100, 300], [100, 250]]);
+	assert.deepEqual(got, [], "ズーム中");
+	// 等倍で始め、途中でピンチ拡大へ移ったら、その時点から送らない。
+	h.visualViewport.scale = 1;
+	const { window: w } = h;
+	const tz = (y) => new w.Touch({ identifier: 1, target: h.el("xrows"), clientX: 100, clientY: y });
+	h.el("xrows").dispatchEvent(new w.TouchEvent("touchstart", { bubbles: true, touches: [tz(300)], changedTouches: [tz(300)] }));
+	h.visualViewport.scale = 1.5;
+	h.el("xrows").dispatchEvent(new w.TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [tz(250)], changedTouches: [tz(250)] }));
+	h.visualViewport.scale = 1;
+	h.el("xrows").dispatchEvent(new w.TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [tz(200)], changedTouches: [tz(200)] }));
+	assert.deepEqual(got, [], "途中でズーム");
+	// 2 本目の指が加わった時点で追跡をやめる。
+	const { window } = h;
+	const t1 = (y) => new window.Touch({ identifier: 1, target: h.el("xrows"), clientX: 100, clientY: y });
+	const t2 = new window.Touch({ identifier: 2, target: h.el("xrows"), clientX: 200, clientY: 300 });
+	h.el("xrows").dispatchEvent(new window.TouchEvent("touchstart", { bubbles: true, touches: [t1(300)], changedTouches: [t1(300)] }));
+	h.el("xrows").dispatchEvent(new window.TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [t1(250), t2], changedTouches: [t1(250)] }));
+	h.el("xrows").dispatchEvent(new window.TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [t1(200)], changedTouches: [t1(200)] }));
+	assert.deepEqual(got, [], "ピンチ");
+	h.close();
+});
+
+test("[§5.3] 縦スクロールに使った操作はスワイプにしない。横ドラッグは従来どおりスワイプ判定へ", async () => {
+	const h = mount({ terminal: true });
+	h.setRightPanel(true);
+	await h.flush();
+	// 左端から始め、縦にスクロールした後で右へ大きく流れても、右パネルを畳まない。
+	drag(h, h.el("xrows"), [[0, 300], [0, 280], [200, 280]]);
+	assert.equal(h.calls.toggleExpanded, 0);
+	// 横のドラッグ（左端起点の右スワイプ）は §5.2 行 5 のとおり畳む。
+	drag(h, h.el("xrows"), [[0, 300], [60, 302], [150, 302]]);
+	assert.equal(h.calls.toggleExpanded, 1);
+	h.close();
+});
+
+test("[§7] dispose でターミナルのリスナーも外す", async () => {
+	const h = mount({ terminal: true });
+	drag(h, h.el("xrows"), [[100, 300], [100, 250]]);
+	h.dispose();
+	const got = wheelsOn(h);
+	drag(h, h.el("xrows"), [[100, 300], [100, 250]]);
+	assert.deepEqual(got, []);
+	h.el("xinput").blur();
+	drag(h, h.el("xrows"), [[100, 100]]);
+	assert.notEqual(h.document.activeElement, h.el("xinput"));
+	h.close();
 });

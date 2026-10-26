@@ -13,6 +13,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 |---|---|---|
 | ドロワー化レイアウト・FAB・バックドロップ・Escape | `PHONE`（§2） | §4 |
 | スワイプジェスチャ | `COARSE`（§2）。動作ごとに `PHONE` も要る | §5 |
+| 右パネルのターミナルのタップ・縦ドラッグ | `COARSE` | §5.3 |
 | キーボード追従・入力 16px | `COARSE` | §6 |
 | viewport meta の書換 | 常時（幅・ポインタで分けない） | §6 |
 | セーフエリア padding・実測 | 幅 ≤1023px かつ `display-mode` が standalone / fullscreen（`SAFE_AREA`） | §6 |
@@ -27,7 +28,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | frame | `[data-rightbar-col]` 要素の親（DSH AppFrame の grid 要素） | [client.js:269](../lib/client.js#L269) |
 | sidebarCol | frame の先頭の子要素 | [client.js:90](../lib/client.js#L90)、[client.js:335](../lib/client.js#L335) |
 | 開／閉 | frame に `data-sidebar-collapsed` が無ければ開、あれば閉。frame が無ければ常に閉として扱う | [client.js:270-273](../lib/client.js#L270-L273) |
-| 右パネル展開 | `ctx.sidebarRight.isExpanded()` が true | [client.js:599](../lib/client.js#L599) |
+| 右パネル展開 | `ctx.sidebarRight.isExpanded()` が true | [client.js:715](../lib/client.js#L715) |
 | オーバーレイ | `document.body` の子要素で、computed `position` が `fixed` のもの（DSH のメニュー・モーダル・トースト、本プラグインの FAB） | [client.js:286-320](../lib/client.js#L286-L320) |
 
 768–1023px は DSH 本体の狭幅挙動（<1024px でレール化し、トグルでオーバーレイ展開）に任せ、本プラグインはレイアウトを変えない。
@@ -47,17 +48,19 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | `ctx.sidebarRight.isExpanded()` / `toggleExpanded()` | ui-sidebar-right。`isExpanded` は画面上のサーフェスが無ければ false | 右パネルを畳む |
 | `--dsh-frame-leading-clearance`（frame から継承される CSS 変数） | ui-layout が darwin の閉時の frame に定め（160px / 84px）、ui-conversation の会話ヘッダ titleRow が `padding-inline-start: max(0px, calc(var(--dsh-frame-leading-clearance,0px) - 20px))` で参照する（conversation `lib/client.js` 15797） | 会話タイトルを FAB から離す（§4.4） |
 | `data-sidebar-right-open`（展開時だけ付く）と、セッション切替で変わる `hidden` | ui-sidebar-right `SidebarPanel` / `SessionView` | 右パネル展開の再判定の契機（判定自体は `isExpanded()`。§4.4） |
+| `section[data-sidebar-terminal]` | ui-sidebar-terminal（`client.terminal.js` 13288, 13334） | ターミナルの特定（§5.3） |
+| xterm.js 6.0.0 の公開 DOM クラス `.xterm` / `.xterm-helper-textarea` / `.xterm-scrollable-element`、helper textarea の `readOnly`（`disableStdin`）、ピクセル単位の `wheel` でスクロールすること | ui-sidebar-terminal が同梱する xterm（ハッシュ化されないサードパーティのクラス。版の更新で変わりうる） | タップで focus、合成 wheel（§5.3） |
 | `document.body` へ portal される固定オーバーレイ | ui-primitives `MenuSurface`、model-selection `ModelSelect`（`createPortal(..., document.body)`）、Modal、Toast（0.2.0-rc.2 で確認） | 座標系の補正対象（§6） |
 
 不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:332](../lib/client.js#L332)）。
 これは全面的な無介入への復帰ではない。次の介入は残る。
 - `#root` の高さ、入力 16px、セーフエリア（実測を含む）、viewport meta（frame に依存しない）
-- 右パネルの body 属性（`isExpanded()` から同期）
+- 右パネルの body 属性（`isExpanded()` から同期）とターミナルのタッチ（`[data-sidebar-terminal] .xterm` が無ければ何もしない）
 - スワイプ: frame が無くても isOpen()=false なので、右スワイプで `toggleSidebar()` を呼びうる。frame 外起点を除外するガード（§5.1 `SwipeOnlyInsideFrame`）は、境界を決められないため掛けない
 
 子の順序だけが変わった場合は CSS が一致し続け、別の先頭要素を fixed／inert にする。この場合は劣化ではなく誤作動になる。
 
-DSH が `--dsh-frame-leading-clearance` の参照をやめた場合は、FAB がタイトルに重なる元の表示へ戻る。
+DSH が `--dsh-frame-leading-clearance` の参照をやめた場合は、FAB がタイトルに重なる元の表示へ戻る。xterm がクラス名やスクロールの実装を変えた場合は、タップ・縦ドラッグが効かなくなる（xterm 6.1 以降で touch のスクロールが入ると二重にスクロールしうる）。
 
 ## 4. ドロワー（`PHONE` のとき）
 
@@ -109,7 +112,7 @@ FAB は左上（`left = safe-left + 10px`、幅 36px。右端は `safe-left + 46
 
 document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定する。`preventDefault` は呼ばないため、ネイティブのスクロールを妨げない（ADR-20261023-1750）。
 
-### 5.1 候補の確定（touchstart、[client.js:546-575](../lib/client.js#L546-L575)）
+### 5.1 候補の確定（touchstart、[client.js:662-691](../lib/client.js#L662-L691)）
 - 候補になるのは、`COARSE` かつ単指で、ピンチズーム中（`|visualViewport.scale − 1| > 0.01`、§6）でなく、`textarea,input,[contenteditable=true]` の外から始まり、`SwipeOnlyInsideFrame` を満たすタッチだけ。
 - 不変条件 `SwipeOnlyInsideFrame`（KI-5）: frame があるとき、起点が frame 外（`document.body` へ portal されたモーダル・メニュー・トーストなど）のタッチは候補にしない。
   pointerdown の `BackdropOnlyInsideFrame` と同じ境界にそろえる。例外は FAB（frame 外だが、本プラグインの開く操作の起点なので候補にする）。
@@ -121,7 +124,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
   開始時の座標・`edge`・横スクロール祖先は変化前のレイアウトで測ったものだから。幅の変わらない `resize`（§6 で本プラグインがキーボードの出入りごとに再送するもの）では破棄しない。
   （Idea from kuraneko1/dsh-mobile-maxxing 24e2e49, MIT。実装は独自）
 
-### 5.2 判定（touchend、[client.js:576-613](../lib/client.js#L576-L613)）
+### 5.2 判定（touchend、[client.js:692-729](../lib/client.js#L692-L729)）
 `dx`、`dy` は終了点と開始点の差で、途中の軌跡は見ない。上から順に評価し、最初に該当した行で決まる。
 
 | # | 条件 | 結果 |
@@ -148,6 +151,24 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 帰結として、768–1023px の coarse 端末（iPad 縦など）で有効なスワイプは、右パネルを畳む操作（行 5）だけになる。1024px 以上から始めたタッチはスワイプにならない（[KI-4](known-issues.md)）。`COARSE` と `PHONE` を検査する時点は異なる。`COARSE` は touchstart 時に、`PHONE` は touchend 時に検査する。その間に `PHONE` / `COARSE` が変化したら候補を破棄する（§5.1 `DropSwipeOnViewportChange`）。
 
 起点の要素は frame 内と FAB に限る（§5.1 `SwipeOnlyInsideFrame`。KI-5 で変更）。
+
+### 5.3 右パネルのターミナル（T311 / T343、ADR-20261026-1800、[client.js:526-640](../lib/client.js#L526-L640)）
+対象は `[data-sidebar-terminal] .xterm` 内から始まるタッチ。document の capture 段階の passive な `touchstart` / `touchend` / `touchcancel` で追跡する。
+`touchmove` だけは、初めて触れた `.xterm` 要素に non-passive で付ける（文書全体のスクロールは妨げない。DOM から外れた要素からは次の touchstart（文書のどこでも）で外し、dispose で全部外す）。
+
+- 追跡の開始: `COARSE` かつ単指で、ピンチズーム中でないこと。状態は `pending`（タップ候補）から始まる。
+- `pending` で、移動が縦横とも 6px 以内なら何もしない。超えた最初の `touchmove` で、`|dy| ≤ |dx|`（横優位）なら追跡をやめ（§5 のスワイプ判定に任せる）、縦優位なら `scroll` へ移る。
+  `scroll` へ移ったとき、§5 のスワイプ候補を捨てる（スクロールに使った操作は、終了時に曲がって横優位でもスワイプにしない）。
+- 不変条件 `TerminalDragScrolls`: `scroll` の間の `touchmove` ごとに `preventDefault` し、前回からの縦の移動 Δy（±32px でクランプ）について、
+  `deltaY = −Δy × 0.8`、`deltaMode = 0` の素の `Event("wheel")`（bubbles・cancelable）を `.xterm-scrollable-element`（無ければ `.xterm`）へ送る。
+  0.8 は、xterm の `SmoothScrollableElement` がピクセル単位の deltaY を 40 で割って 50 倍する（1 wheel px = 1.25px）ため、指と表示の移動をそろえる値。
+  2 本目の指が触れたとき、または途中でピンチズーム中になったときは追跡をやめる。
+- 不変条件 `TerminalTapFocuses`: `pending` のまま終わり、単指で、開始から 500ms 以内、終了点が開始点から縦横 6px 以内、ズーム中でないタッチを「タップ」とし、
+  その `touchend` の中で `textarea.xterm-helper-textarea` に `focus({preventScroll:true})` を同期的に呼ぶ。
+  textarea が無い、`readOnly`（DSH が書込権限の無いときに付ける `disableStdin`）または `disabled` なら何もしない。
+  すでにフォーカス済み（DSH の表示時 effect による focus で、キーボードが出ていない状態がありうる）なら、キーボード表示中（`visualViewport.height < innerHeight − 100`）は何もせず、それ以外は `blur()` してから focus し直す。
+- 高さ合わせ（キーボード表示時）は追加しない。`#root` の追従（§6）で右パネルとターミナルのマウント要素が縮み、DSH の `ResizeObserver` → fit が走る前提（実機未確認。ADR-20261026-1800）。
+- mouse tracking を使うアプリでは、xterm がこの wheel をアプリへの入力に変える（デスクトップのホイールと同じ扱い）。
 
 ## 6. viewport・キーボード・セーフエリア
 
@@ -190,7 +211,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 ## 7. ライフサイクル
 
-- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:643-645](../lib/client.js#L643-L645)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
+- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:759-761](../lib/client.js#L759-L761)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
 - `style[data-plugin-css="dsh-mobile-ui/override.css"]` が既にあれば、style タグを重ねて挿入しない。この場合、既存のタグは本 effect の撤去対象にならない。
 - 撤去手段は、`cordis.patch.yml` の insert を削除することと、ページを再読込すること（README）。
 
@@ -199,12 +220,13 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 - 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。iPad と Android は未確認。
   ピンチズームの許可と `PinchFreezesRoot`（ADR-20261026-1450、KI-2・KI-8）は実機未確認。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、42 件。`test/client.test.mjs` 34 件、`test/chrome.test.mjs` 8 件）。各テストは名前の `[§n]` で本書の節に対応する。
-  happy-dom で検査できないもの: カスタムプロパティの継承と実際の重なり、`env()` の値（probe の computed をスタブにする）、`display-mode`（規則の文字列で検査）。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、50 件。`test/client.test.mjs` 34 件、`test/chrome.test.mjs` 16 件）。各テストは名前の `[§n]` で本書の節に対応する。
+  happy-dom で検査できないもの: カスタムプロパティの継承と実際の重なり、`env()` の値（probe の computed をスタブにする）、`display-mode`（規則の文字列で検査）、ソフトキーボードの表示、xterm 本体のスクロール。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
-- 実機未確認（ADR-20261026-1800）: §4.4・§6 のセーフエリア実測。iPhone PWA での確認項目:
+- 実機未確認（ADR-20261026-1800）: §4.4・§5.3・§6 のセーフエリア実測。iPhone PWA での確認項目:
   1. 閉時に会話タイトルが FAB の右から始まるか（縦・横向き）。右パネルを開くと FAB が消え、閉じるボタン・左端からの右スワイプで戻ると FAB が出るか。
-  2. Safari の Web インスペクタで `html` の `--dsh-mobile-safe-*` と `data-dsh-mobile-native-gap` の値、`screen.height` / `innerHeight` を記録する。`detected` のとき、下端の余白が二重に見えるか。
+  2. ターミナル（書込可能）をタップしてキーボードが出るか。読み取り専用ではキーボードが出ないか。縦ドラッグでスクロールバックが指に追従するか。横の右スワイプ（左端起点）で右パネルが畳まれるか。キーボード表示中に最下行が見えるか（見えなければ高さ合わせを追加する）。
+  3. Safari の Web インスペクタで `html` の `--dsh-mobile-safe-*` と `data-dsh-mobile-native-gap` の値、`screen.height` / `innerHeight` を記録する。`detected` のとき、下端の余白が二重に見えるか。
      二重なら `localStorage.setItem("dsh-mobile-ui:native-gap","on")` で再読込し、余白が消えてホームインジケータに入力欄が重ならないかを見る。
 
 ## 9. 既知の問題・未確定事項

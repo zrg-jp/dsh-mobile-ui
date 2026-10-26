@@ -105,7 +105,17 @@ DSH の挙動は `@deepseek-ai/*` 0.2.0-rc.2 の配布物で確認した（行�
   ui-sidebar-right `lib/client.js` 5666–5728（`PanelChrome` / `SidebarPanel` / `RightbarSeat`）・6511（`isExpanded`）、
   ui-sidebar-terminal `lib/client.terminal.js` 274–276（`focus`）、319（readOnly）、8867–8895（wheel の処理）、13400–13475（マウント）。
 
+## 独立レビュー
+
+- codex / gpt-6.1-sol（workflow、閲覧のみ）。指摘 2 件を採用した: (high) フォーカス済みの textarea を除外するとキーボードを出せない → blur → focus に変更。
+  (low) 外れたターミナル要素を dispose まで保持する → 毎回の touchstart で解放。
+
 ## 検証
 
-- 実装は 3 つの commit に分ける（issue #12 → T347 → T311 / T343）。自動テストと独立レビューの結果は最後の commit で記入する。
-- 実機: 未確認。
+- 自動テスト（`npm test`、50 件。うち本 ADR 分は `test/chrome.test.mjs` の 16 件）。
+  変異 23 種（clearance の規則の削除・PWA 側の inset 二重化、FAB 非表示規則の削除、`isExpanded()` を DOM 属性の判定に差し替え、
+  native gap の常時 on 化・キーボード条件・縦向き条件・境界 `>=`・下端 inset 条件の削除、probe のオーバーレイ除外の削除、
+  ターミナルの readOnly ガード・終了点の閾値・クランプ・preventDefault・スワイプ候補の破棄・横優位の打切り・ズームガード・2 本指ガード・COARSE ガード・dispose の削除、focus 済み時の blur の削除・キーボード表示中の除外の削除・外れた要素の解放の削除）で、すべて赤になることを確認した。
+- happy-dom で検査できないもの: カスタムプロパティの継承と実際の重なり、`env()` の値（probe の computed をスタブにした）、`display-mode`（CSS は規則の文字列で検査）、
+  ソフトキーボードの表示、xterm 本体のスクロール。
+- 実機: 未確認。iPhone PWA で確認してから accepted にする（手順は spec §8）。
