@@ -92,7 +92,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
   横スクロール祖先とは、`scrollWidth > clientWidth+1` かつ `overflow-x` が `auto` / `scroll` の祖先要素を指す（body は含まない）。
 - `touchcancel` が来たら候補を破棄する。
 
-### 5.2 判定（touchend、[client.js:324-350](../lib/client.js#L324-L350)）
+### 5.2 判定（touchend、[client.js:324-359](../lib/client.js#L324-L359)）
 `dx`、`dy` は終了点と開始点の差で、途中の軌跡は見ない。上から順に評価し、最初に該当した行で決まる。
 
 | # | 条件 | 結果 |
@@ -103,13 +103,13 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 | 4 | `dx > 0`、横スクロール祖先あり、かつ一部が左端にない | 何もしない |
 | 5a | `dx > 0`、`PHONE ∧ 開` | 何もしない（ドロワーの背後は見えないため。ADR-20261024-0420） |
 | 5 | `dx > 0`、右パネル展開中 | `edge` なら `toggleExpanded()`（チャットへ戻る）。`edge` でなければ何もしない |
-| 6 | `dx > 0`、`x > innerWidth/2` | 何もしない |
+| 6 | （欠番。旧「`x > innerWidth/2` なら何もしない」は ADR-20261026-1416 で廃止） | — |
 | 7 | `dx > 0` | `PHONE ∧ 閉` ならトグル（開く）。それ以外は何もしない |
 | 8 | `dx < 0`、横スクロール祖先あり | 何もしない |
 | 9 | `dx < 0` | `PHONE ∧ 開` ならトグル（閉じる）。それ以外は何もしない |
 
 名前付き不変条件（§8 のテストで検査する）:
-- `OpenOnlyWhenClosedPhone`: サイドバーを開くのは `PHONE ∧ 閉 ∧ x ≤ innerWidth/2` のときだけ。
+- `OpenOnlyWhenClosedPhone`: サイドバーを開くのは `PHONE ∧ 閉` のときだけ。起点の x は問わない（ADR-20261026-1416）。
 - `CollapseOnlyFromEdge`: 右パネルを畳むのは起点 `x ≤ 28` のときだけ。
 - `RightPanelFirst`: 右パネル展開中の右スワイプは、サイドバーを開かない（表の行 5 で終わる。ADR-20261023-1750 の優先順位）。
 - `DrawerShadowsRightPanel`: `PHONE` でドロワーが開いている間、右スワイプは右パネルを畳まない（行 5a。ADR-20261024-0420）。
@@ -139,7 +139,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 ## 7. ライフサイクル
 
-- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:373-375](../lib/client.js#L373-L375)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
+- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:372-374](../lib/client.js#L372-L374)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
 - `style[data-plugin-css="dsh-mobile-ui/override.css"]` が既にあれば、style タグを重ねて挿入しない。この場合、既存のタグは本 effect の撤去対象にならない。
 - 撤去手段は、`cordis.patch.yml` の insert を削除することと、ページを再読込すること（README）。
 
