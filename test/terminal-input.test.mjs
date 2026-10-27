@@ -927,3 +927,249 @@ test("[§5.3 TerminalInputReachesOnce] 確定の送信待ちを Backspace が解
 		t.close();
 	}
 });
+
+// ---- 差分の起点を「送信済みの影」に固定する（T311 の追記、2026-10-27 16:36 の実機報告。ADR-20261027-1700）----
+// 実機: 「echo ご」→「きげん」→ 候補「機嫌」→「麗しゅう」で、端末の行が `echo ごきげ機嫌麗しゅう`（読み 3 文字のうち 1 文字だけ消えた）。
+// beforeinput の時点の値だけを差分の起点にすると、beforeinput と input が 1 対 1 に並ばない列で消した数を数え落とす。
+// どの列を iOS / Gboard が出すかは実機ログで未確認なので（tmp/terminal-input-probe.md）、観測と一致した 2 列と、近い 2 列を固定する。
+
+/** UA の後方削除の部品: beforeinput（任意）・値の変更・input を分けて出せるようにする。 */
+function uaDeleteParts(w, ta) {
+	return {
+		bi: () => ta.dispatchEvent(new w.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: "deleteContentBackward" })),
+		apply: () => { const e = ta.selectionEnd; ta.value = ta.value.slice(0, e - 1) + ta.value.slice(e); ta.setSelectionRange(e - 1, e - 1); },
+		input: () => ta.dispatchEvent(new w.InputEvent("input", { bubbles: true, composed: true, inputType: "deleteContentBackward" }))
+	};
+}
+/** zsh（UTF-8）の行: DEL がコードポイントを 1 つ消す。 */
+const termLine = (sent) => { const s = []; for (const d of sent) for (const c of d) c === "\x7f" ? s.pop() : s.push(c); return s.join(""); };
+
+for (const [name, convert] of [
+	["2 回目以降の後方削除に beforeinput が無い", (w, ta) => { const d = uaDeleteParts(w, ta); for (let i = 0; i < 3; i++) { if (i === 0) d.bi(); d.apply(); d.input(); } uaInsert(w, ta, "機嫌"); }],
+	["後方削除の beforeinput が先にまとめて来て、input が後から来る", (w, ta) => { const d = uaDeleteParts(w, ta); for (let i = 0; i < 3; i++) { d.bi(); d.apply(); } for (let i = 0; i < 3; i++) d.input(); uaInsert(w, ta, "機嫌"); }],
+	["削除と挿入の beforeinput が全部先に来る", (w, ta) => { const d = uaDeleteParts(w, ta); for (let i = 0; i < 3; i++) { d.bi(); d.apply(); } ta.dispatchEvent(new w.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: "insertText", data: "機嫌" })); const e = ta.selectionEnd; ta.value = ta.value.slice(0, e) + "機嫌"; ta.setSelectionRange(e + 2, e + 2); for (let i = 0; i < 3; i++) d.input(); ta.dispatchEvent(new w.InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: "機嫌" })); }],
+	["後方削除に beforeinput が 1 つも無い", (w, ta) => { const d = uaDeleteParts(w, ta); for (let i = 0; i < 3; i++) { d.apply(); d.input(); } uaInsert(w, ta, "機嫌"); }]
+]) {
+	test(`[§5.3 TerminalInputReachesOnce] Gboard 型の変換で ${name} 列も、読みの数だけ DEL を送る（実機「ごきげ機嫌」）`, async () => {
+		const t = openTerminal();
+		const w = t.h.window;
+		try {
+			await typeKana(t, "echo ご");
+			await typeKana(t, "きげん");
+			t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
+			await t.wait(10);
+			convert(w, t.ta);
+			t.ta.dispatchEvent(key(w, "keyup", { key: "Unidentified" }, 0));
+			await t.wait(5);
+			await typeKana(t, "麗しゅう");
+			assert.equal(t.ta.value, "echo ご機嫌麗しゅう");
+			assert.equal(termLine(t.sent), "echo ご機嫌麗しゅう");
+			assert.equal(t.sent.join("").split("\x7f").length - 1, 3, "DEL は読みの 3 文字分だけ");
+		} finally {
+			t.close();
+		}
+	});
+}
+
+test("[§5.3 TerminalInputReachesOnce] 値が編集の外で変わった後（影と違う値での beforeinput）は、影ではなく beforeinput の時点の値を起点にする", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await iosKey(t, "q", { keyName: "q" });
+		// スクリプト等で値と選択範囲を変える（input を伴わない）。差分は beforeinput の時点の値 abc から取る。
+		t.ta.value = "abc";
+		t.ta.setSelectionRange(1, 2);
+		uaInsert(w, t.ta, "x");
+		await t.wait(5);
+		assert.deepEqual(t.sent, ["q", "\x7fx"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] xterm が値を変えた・自分で送った後は、古い影を起点にしない（Enter・Backspace・blur・変換・対象外の input の後の beforeinput 無しの挿入）", async () => {
+	// 影を捨て損ねると、beforeinput の無い挿入で古い値との差（余計な DEL や再送）が出る。各場面の後に beforeinput 無しで「x」を入れる。
+	const insertBare = (w, ta) => uaInsert(w, ta, "x", "insertText", {}, { beforeinput: false });
+	const cases = {
+		// Enter（xterm が CR を送って値を空にする）
+		enter: async (t, w) => { t.ta.dispatchEvent(key(w, "keydown", { key: "Enter" }, 13)); t.ta.dispatchEvent(key(w, "keyup", { key: "Enter" }, 13)); return ["\r", "x"]; },
+		// keyCode 8 の Backspace（xterm が DEL を送り、本プラグインが textarea へ写す）
+		backspace: async (t, w) => { t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8)); t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8)); return ["\x7f", "x"]; },
+		// blur（xterm が値を空にする）→ 再 focus
+		blur: async (t) => { t.ta.blur(); t.ta.focus(); return ["x"]; },
+		// 変換の確定（xterm が値から確定文字を送る）
+		composition: async (t, w) => {
+			const comp = (type, data) => t.ta.dispatchEvent(new w.CompositionEvent(type, { bubbles: true, composed: true, data }));
+			comp("compositionstart", "");
+			uaInsert(w, t.ta, "字", "insertCompositionText", { isComposing: true });
+			comp("compositionupdate", "字");
+			await t.wait(1);
+			comp("compositionend", "字");
+			await t.wait(5);
+			return ["字", "x"];
+		},
+		// 対象外の input（xterm に任せる）で値が変わる
+		other: async (t, w) => { t.ta.value = "zz"; t.ta.setSelectionRange(2, 2); t.ta.dispatchEvent(new w.InputEvent("input", { bubbles: true, composed: true, inputType: "insertFromPaste", data: null })); return ["x"]; }
+	};
+	for (const [name, run] of Object.entries(cases)) {
+		const t = openTerminal();
+		const w = t.h.window;
+		try {
+			await typeKana(t, "ab");
+			const expected = await run(t, w);
+			await t.wait(5);
+			insertBare(w, t.ta);
+			await t.wait(5);
+			assert.deepEqual(t.sent, ["a", "b", ...expected], name);
+		} finally {
+			t.close();
+		}
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace を写した後の変換でも、beforeinput の無い後方削除を数え落とさない（写した後の値を影にする）", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "きょうx");
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8));
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		await t.wait(5);
+		// 1 つ目の削除にも beforeinput が無い列（影が無ければ起点が無く、xterm に任せて DEL が落ちる）。
+		const d = uaDeleteParts(w, t.ta);
+		for (let i = 0; i < 3; i++) { d.apply(); d.input(); }
+		uaInsert(w, t.ta, "今日");
+		await t.wait(5);
+		assert.equal(termLine(t.sent), "今日");
+		assert.equal(t.ta.value, "今日");
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 変換が始まったら影を捨て、確定後の beforeinput 無しの挿入で変換前の値との差を送らない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	const comp = (type, data) => t.ta.dispatchEvent(new w.CompositionEvent(type, { bubbles: true, composed: true, data }));
+	try {
+		await typeKana(t, "ab");
+		comp("compositionstart", "");
+		// 変換中の値の変化（input を伴わない。WebKit の setMarkedText は input を出さないことがある）。
+		t.ta.value = "ab字";
+		t.ta.setSelectionRange(3, 3);
+		comp("compositionupdate", "字");
+		await t.wait(1);
+		comp("compositionend", "字");
+		await t.wait(5);
+		uaInsert(w, t.ta, "x", "insertText", {}, { beforeinput: false });
+		await t.wait(5);
+		assert.deepEqual(t.sent, ["a", "b", "字", "x"]);
+	} finally {
+		t.close();
+	}
+});
+
+// ---- 独立レビュー（codex / gpt-6.1-sol、ADR-20261027-1700）が挙げた反例の列 ----
+
+test("[§5.3 TerminalInputReachesOnce] 削除の beforeinput と input の間に 229 の keydown が挟まっても、未送信の削除を数え落とさない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "きげん");
+		const d = uaDeleteParts(w, t.ta);
+		d.bi(); d.apply();
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
+		d.bi(); d.apply();
+		d.input(); d.input();
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Unidentified" }, 0));
+		await t.wait(5);
+		assert.equal(t.ta.value, "き");
+		assert.equal(termLine(t.sent), "き");
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 取り消された beforeinput（input が来ない）を待ちとして数え続けず、その後の編集外の変化を起点にする", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await iosKey(t, "q", { keyName: "q" });
+		// 別のリスナーが取り消す beforeinput（値も変わらず input も来ない）。
+		const cancel = (e) => e.preventDefault();
+		t.ta.addEventListener("beforeinput", cancel, { once: true });
+		t.ta.dispatchEvent(new w.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: "insertText", data: "z" }));
+		// 編集の外で値が変わる → keydown を伴わない挿入。差分は beforeinput の時点の値 abc から取る。
+		t.ta.value = "abc";
+		t.ta.setSelectionRange(3, 3);
+		uaInsert(w, t.ta, "x");
+		await t.wait(5);
+		assert.deepEqual(t.sent, ["q", "x"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] input が来ない beforeinput（値が空での後方削除）の後も、編集外の変化を起点にして文字を再送しない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await iosKey(t, "a", { keyName: "a" });
+		const d = uaDeleteParts(w, t.ta);
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
+		d.bi(); d.apply(); d.input();
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Unidentified" }, 0));
+		await t.wait(5);
+		// 値が空での後方削除: beforeinput だけで input は来ない（本プラグインが DEL を 1 つ送る）。
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
+		d.bi();
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Unidentified" }, 0));
+		await t.wait(5);
+		// 編集の外で値が変わる → 229 → 挿入。差分は beforeinput の時点の値 abc から取る。
+		t.ta.value = "abc";
+		t.ta.setSelectionRange(3, 3);
+		await iosKey(t, "x", { keyName: "x" });
+		assert.deepEqual(t.sent, ["a", "\x7f", "\x7f", "x"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 削除の input が別のタスクに遅れて来て、その前に次の beforeinput が来ても、DEL を数え落とさない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "きげん");
+		const d = uaDeleteParts(w, t.ta);
+		d.bi(); d.apply();
+		await t.wait(5);
+		d.bi(); d.apply();
+		await t.wait(5);
+		d.input(); d.input();
+		await t.wait(5);
+		assert.equal(t.ta.value, "き");
+		assert.equal(termLine(t.sent), "き");
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 貼り付け（xterm が送って値を空にする）の後の挿入は、貼り付け前の影を起点にしない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "ab");
+		// input の来ない beforeinput が待ちに残った状態（取り消されず、値も変わらない）。
+		t.ta.dispatchEvent(new w.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: "insertText", data: "q" }));
+		// 貼り付け: xterm の paste ハンドラが clipboardData を送り、値を空にする（happy-dom の paste は clipboardData を持たないので、値の変化だけを再現する）。
+		t.ta.dispatchEvent(new w.Event("paste", { bubbles: true, cancelable: true }));
+		t.ta.value = "";
+		t.ta.setSelectionRange(0, 0);
+		uaInsert(w, t.ta, "x");
+		await t.wait(5);
+		// 端末の行は「ab＋貼り付けた内容」のまま。古い影 ab を起点にすると DEL ×2 が出て ab を消してしまう。
+		assert.deepEqual(t.sent, ["a", "b", "x"]);
+	} finally {
+		t.close();
+	}
+});
