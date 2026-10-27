@@ -1,7 +1,7 @@
 # ADR-20261027-0020: iOS のターミナルで落ちる文字入力を、composed でない input として xterm へ送り直す
 
 - Date: 2026-10-27
-- Status: proposed
+- Status: superseded by ADR-20261027-1400
 - Level: 3
 - Deciders: AI（DSH の Claude 系サブエージェント）。実機確認後にオーナーが accepted にする
 - Task: T311 / KI-12

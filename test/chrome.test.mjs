@@ -303,7 +303,7 @@ test("[§7] dispose でターミナルのリスナーも外す", async () => {
 	h.close();
 });
 
-test("[§5.3 TerminalInputUntouched] ターミナルの helper textarea のキー・変換イベントには介入しない。input は送り直しだけ（T311）", async () => {
+test("[§5.3 TerminalInputUntouched] ターミナルの helper textarea のキー・変換イベントには介入しない。例外は keyCode 229 の keydown と、input の送り直しだけ（T311）", async () => {
 	// xterm 6.0.0 の入力経路（keydown / keypress / input / composition*。sidebar-terminal 0.2.0-rc.2 の client.terminal.js:310）
 	// が本プラグインの document capture リスナー（T344 の Enter、T310 の focusin ガード等）で止められないことを検査する。
 	// xterm 本体の処理（onData に届くか）は tmp/repro で同梱版を動かして確認した（spec §5.3）。
@@ -321,6 +321,7 @@ test("[§5.3 TerminalInputUntouched] ターミナルの helper textarea のキ�
 	// どこかで伝播を止めれば届かず、preventDefault すれば defaultPrevented が立つ（独立レビューの指摘）。
 	// input は composed も記録する。COARSE の insertText は §5.3 TerminalInputReachesOnce により、元の（composed:true の）input を止め、
 	// composed:false の input を送り直す（xterm 本体を使った検査は test/terminal-input.test.mjs）。
+	// keyCode 229 の keydown は、同じ節により xterm に見せない（伝播を止める。preventDefault はしない）。
 	const onWindow = (e) => { if (e.target === input) reached.push(`${e.type}:${e.defaultPrevented}${e.type === "input" ? `:composed=${e.composed}` : ""}`); };
 	for (const type of types) h.window.addEventListener(type, onWindow);
 	const W = h.window;
@@ -337,11 +338,12 @@ test("[§5.3 TerminalInputUntouched] ターミナルの helper textarea のキ�
 	fire(key("keyup", { key: "a" }, 65));
 	fire(new W.InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertText", data: "a" }));
 	// 実物の input / composition* は cancelable ではないが、preventDefault の呼出しを検出するため cancelable にする。
+	input.value += "a";
 	fire(new W.InputEvent("input", { bubbles: true, cancelable: true, composed: true, inputType: "insertText", data: "a" }));
 	fire(new W.CompositionEvent("compositionstart", { bubbles: true, cancelable: true }));
 	fire(new W.CompositionEvent("compositionupdate", { bubbles: true, cancelable: true, data: "か" }));
 	fire(new W.CompositionEvent("compositionend", { bubbles: true, cancelable: true, data: "か" }));
-	assert.deepEqual(reached, ["keydown:false", "keydown:false", "keypress:false", "keyup:false", "beforeinput:false", "input:false:composed=false", "compositionstart:false", "compositionupdate:false", "compositionend:false"]);
+	assert.deepEqual(reached, ["keydown:false", "keypress:false", "keyup:false", "beforeinput:false", "input:false:composed=false", "compositionstart:false", "compositionupdate:false", "compositionend:false"]);
 	// T310 の focusin ガードは composer 限定。ユーザー操作の期限（1.5 秒）外のフォーカスでもターミナルからは外さない。
 	const later = realNow() + 60_000;
 	Date.now = () => later;

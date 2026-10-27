@@ -163,8 +163,9 @@ test("[§5.3 TerminalInputReachesOnce] iOS 中国語 IME の空白 2 回 → 。
 		uaInsert(w, t.ta, "。");
 		t.ta.dispatchEvent(key(w, "keyup", { key: " " }, 32));
 		await t.wait(5);
-		// 削除（deleteContentBackward）は xterm に任せる（差分検出は値の比較なので、この時刻差では何も送らない）。
-		assert.deepEqual(t.sent, [" ", "。"]);
+		// textarea の値は残す（ADR-20261027-1400）ので、空白を消す削除は端末にも DEL として届き、端末の行も「。」になる。
+		assert.deepEqual(t.sent, [" ", "\x7f", "。"]);
+		assert.equal(t.ta.value, "。");
 	} finally {
 		t.close();
 	}
@@ -273,7 +274,7 @@ function watchInputs(t) {
 	return seen;
 }
 
-test("[§5.3 TerminalInputReachesOnce] 介入しない入力（fine pointer・readOnly・insertText 以外）は元の input をそのまま通す", async () => {
+test("[§5.3 TerminalInputReachesOnce] 介入しない入力（fine pointer・readOnly・貼り付けなど対象外の inputType）は元の input をそのまま通す", async () => {
 	const desktop = openTerminal({ coarse: false });
 	try {
 		const seen = watchInputs(desktop);
@@ -290,10 +291,10 @@ test("[§5.3 TerminalInputReachesOnce] 介入しない入力（fine pointer・re
 		t.term.options.disableStdin = true;
 		uaInsert(w, t.ta, "r");
 		t.term.options.disableStdin = false;
-		// 自動修正の置換など insertText 以外の挿入は xterm に任せる（xterm は捨てる）。
-		uaInsert(w, t.ta, "z", "insertReplacementText");
+		// 貼り付け（xterm が paste イベントで送る）・前方削除は xterm に任せる。
+		uaInsert(w, t.ta, "z", "insertFromPaste");
 		await t.wait(5);
-		assert.deepEqual(seen, ["insertText:r:true", "insertReplacementText:z:true"]);
+		assert.deepEqual(seen, ["insertText:r:true", "insertFromPaste:z:true"]);
 		assert.deepEqual(t.sent, []);
 	} finally {
 		t.close();
@@ -368,7 +369,7 @@ test("[§5.3 TerminalInputReachesOnce] keyup の後に input が来ても、差�
 	}
 });
 
-test("[§5.3 TerminalInputReachesOnce] 選択範囲の置換・カーソル途中への挿入でも、値を挿入前へ戻して DEL や余計な文字を送らない", async () => {
+test("[§5.3 TerminalInputReachesOnce] 選択範囲の置換・カーソル途中への挿入は、値と選択範囲に触れず、差分（DEL ＋ 文字）を 1 回送る", async () => {
 	const t = openTerminal();
 	const w = t.h.window;
 	try {
@@ -378,16 +379,16 @@ test("[§5.3 TerminalInputReachesOnce] 選択範囲の置換・カーソル途�
 		uaInsert(w, t.ta, "x");
 		t.ta.dispatchEvent(key(w, "keyup", { key: "x" }, 0));
 		await t.wait(5);
-		assert.equal(t.ta.value, "abc", "選択範囲の置換は置換前の値へ戻る（差分検出が DEL を送らない）");
-		assert.deepEqual([t.ta.selectionStart, t.ta.selectionEnd], [1, 2], "選択範囲も戻る");
+		assert.equal(t.ta.value, "axc", "UA が入れた値のまま（巻き戻さない）");
+		assert.deepEqual([t.ta.selectionStart, t.ta.selectionEnd], [2, 2]);
 		t.ta.setSelectionRange(1, 1);
 		t.ta.dispatchEvent(key(w, "keydown", { key: "😀" }, 229));
 		uaInsert(w, t.ta, "😀");
 		t.ta.dispatchEvent(key(w, "keyup", { key: "😀" }, 0));
 		await t.wait(5);
-		assert.deepEqual(t.sent, ["x", "😀"]);
-		assert.equal(t.ta.value, "abc", "値は挿入前へ戻る");
-		assert.deepEqual([t.ta.selectionStart, t.ta.selectionEnd], [1, 1]);
+		// カーソルより後ろは変わらないものとして差分を取る。xterm の差分検出（DEL・値全体の送信）は走らない。
+		assert.deepEqual(t.sent, ["\x7fx", "😀"]);
+		assert.equal(t.ta.value, "a😀xc");
 	} finally {
 		t.close();
 	}
@@ -505,7 +506,7 @@ test("[§5.3 TerminalInputReachesOnce] 送信待ちを Enter が解いた直後�
 	}
 });
 
-test("[§5.3 TerminalInputReachesOnce] beforeinput の無い UA の選択範囲の置換は、keydown の時点の値へ戻して二重・DEL を出さない", async () => {
+test("[§5.3 TerminalInputReachesOnce] beforeinput の無い UA の選択範囲の置換は、data だけを 1 回送り、値に触れない（消えた選択範囲は分からない）", async () => {
 	const t = openTerminal();
 	const w = t.h.window;
 	try {
@@ -516,7 +517,7 @@ test("[§5.3 TerminalInputReachesOnce] beforeinput の無い UA の選択範囲�
 		t.ta.dispatchEvent(key(w, "keyup", { key: "x" }, 0));
 		await t.wait(5);
 		assert.deepEqual(t.sent, ["x"]);
-		assert.equal(t.ta.value, "abc");
+		assert.equal(t.ta.value, "axc");
 	} finally {
 		t.close();
 	}
@@ -590,7 +591,7 @@ test("[§5.3 TerminalInputReachesOnce] compositionend の配送が途中で止�
 	}
 });
 
-test("[§5.3 TerminalInputReachesOnce] keydown を伴わない選択範囲の置換は、beforeinput の時点の値と選択範囲へ戻す", async () => {
+test("[§5.3 TerminalInputReachesOnce] keydown を伴わない選択範囲の置換は、beforeinput の時点の値との差分を送り、値に触れない", async () => {
 	const t = openTerminal();
 	const w = t.h.window;
 	try {
@@ -599,9 +600,9 @@ test("[§5.3 TerminalInputReachesOnce] keydown を伴わない選択範囲の置
 		t.ta.setSelectionRange(1, 2);
 		uaInsert(w, t.ta, "x");
 		await t.wait(5);
-		assert.deepEqual(t.sent, ["q", "x"]);
-		assert.equal(t.ta.value, "abc");
-		assert.deepEqual([t.ta.selectionStart, t.ta.selectionEnd], [1, 2]);
+		assert.deepEqual(t.sent, ["q", "\x7fx"]);
+		assert.equal(t.ta.value, "axc");
+		assert.deepEqual([t.ta.selectionStart, t.ta.selectionEnd], [2, 2]);
 	} finally {
 		t.close();
 	}
@@ -691,6 +692,237 @@ test("[§5.3 TerminalInputReachesOnce] keydown の後に別の削除が入った
 		await t.wait(5);
 		assert.notEqual(t.ta.value, "abc", "削除された b を戻さない");
 		assert.ok(t.sent.includes("x"));
+	} finally {
+		t.close();
+	}
+});
+
+// ---- 日本語のかな→漢字変換（T311 の追記、2026-10-27 の実機報告「ひらがなは入るが変換できない」。ADR-20261027-1400）----
+// Gboard などのサードパーティキーボードは、かなを未確定の印（marked text）なしで textarea へ入れ、候補を選ぶと
+// textarea のカーソル前の文脈（UITextDocumentProxy.documentContextBeforeInput）から読みを消して漢字を入れる。
+// 消し方（後方削除の繰り返し ＋ insertText、または読みを選択して置換）は実機で確かめていないので、両方を合成する。
+
+/** 1 文字ずつのかな入力（keydown 229 → 約 10ms 後に insertText → keyup）。 */
+async function typeKana(t, text) {
+	for (const ch of text) await iosKey(t, ch, { keyName: ch });
+}
+
+test("[§5.3 TerminalInputReachesOnce] Gboard 型: かなは textarea に残り（変換の文脈）、後方削除＋挿入の変換は DEL と漢字を 1 回ずつ送る", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "きょう");
+		// 変換の前提: 入力したかなが textarea の値として残っている（キーボードは値から読みを取って消す）。
+		assert.equal(t.ta.value, "きょう");
+		assert.deepEqual(t.sent, ["き", "ょ", "う"]);
+		// 候補「今日」を選ぶ: keydown 229 → deleteContentBackward × 3 → insertText「今日」→ keyup。
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
+		await t.wait(10);
+		for (let i = 0; i < 3; i++) uaInsert(w, t.ta, null, "deleteContentBackward");
+		uaInsert(w, t.ta, "今日");
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Unidentified" }, 0));
+		await t.wait(5);
+		assert.equal(t.ta.value, "今日");
+		assert.deepEqual(t.sent, ["き", "ょ", "う", "\x7f", "\x7f", "\x7f", "今日"]);
+		// 続けて Enter: xterm が CR を送り、値を空にする。
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Enter" }, 13));
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Enter" }, 13));
+		await t.wait(5);
+		assert.equal(t.sent.at(-1), "\r");
+		assert.equal(t.ta.value, "");
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] Gboard 型: 読みを選択して置換する変換（insertReplacementText）は、読みの数だけ DEL と漢字を送る", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await iosKey(t, "a", { keyName: "a" });
+		await typeKana(t, "にほん");
+		assert.equal(t.ta.value, "aにほん");
+		t.ta.setSelectionRange(1, 4);
+		uaInsert(w, t.ta, "日本", "insertReplacementText");
+		await t.wait(5);
+		assert.equal(t.ta.value, "a日本");
+		assert.deepEqual(t.sent, ["a", "に", "ほ", "ん", "\x7f\x7f\x7f日本"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 標準キーボード型: marked text の変換（composition 中の置換）は確定文字だけを 1 回送り、途中の読みを送らない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	const comp = (type, data) => t.ta.dispatchEvent(new w.CompositionEvent(type, { bubbles: true, composed: true, data }));
+	try {
+		await iosKey(t, "x", { keyName: "x" });
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
+		comp("compositionstart", "");
+		const start = t.ta.value.length;
+		for (const reading of ["か", "かん", "かんじ"]) {
+			t.ta.setSelectionRange(start, t.ta.value.length);
+			uaInsert(w, t.ta, reading, "insertCompositionText", { isComposing: true });
+			comp("compositionupdate", reading);
+			await t.wait(2);
+		}
+		// 候補「漢字」を選ぶ（marked text を置換）→ 確定。
+		t.ta.setSelectionRange(start, t.ta.value.length);
+		uaInsert(w, t.ta, "漢字", "insertCompositionText", { isComposing: true });
+		comp("compositionupdate", "漢字");
+		await t.wait(2);
+		comp("compositionend", "漢字");
+		// Safari が確定直後に出す insertText（isComposing:false）も二重にしない。
+		t.ta.dispatchEvent(new w.InputEvent("input", { bubbles: true, composed: true, data: "漢字", inputType: "insertText" }));
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Unidentified" }, 0));
+		await t.wait(10);
+		assert.deepEqual(t.sent, ["x", "漢字"]);
+		assert.equal(t.ta.value, "x漢字", "変換中も確定後も値に触れない");
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 値が空の textarea での後方削除（Enter の後の Backspace）は DEL を 1 回送る", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		// Gboard の Backspace が keyCode 229 で来る場合（推定）。値は空なので UA の削除は何も消さない。
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
+		t.ta.dispatchEvent(new w.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: "deleteContentBackward" }));
+		t.ta.dispatchEvent(new w.InputEvent("input", { bubbles: true, composed: true, inputType: "deleteContentBackward" }));
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Unidentified" }, 0));
+		await t.wait(5);
+		assert.deepEqual(t.sent, ["\x7f"]);
+		// keyCode 8 の Backspace は xterm が keydown で送る（UA は値を変えない）。二重にしない。
+		const down = key(w, "keydown", { key: "Backspace" }, 8);
+		t.ta.dispatchEvent(down);
+		assert.equal(down.defaultPrevented, true);
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		await t.wait(5);
+		assert.deepEqual(t.sent, ["\x7f", "\x7f"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 改行の挿入は CR、絵文字の置換はサロゲートペアを割らずに 1 文字の DEL で送る", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await iosKey(t, "a", { keyName: "a" });
+		await iosKey(t, "😀", { keyName: "😀" });
+		// 予測候補などで直前の絵文字を別の絵文字へ置換する（上位サロゲートが同じ）。
+		t.ta.setSelectionRange(1, 3);
+		uaInsert(w, t.ta, "😁", "insertReplacementText");
+		// 改行を含む挿入（音声入力・候補の挿入を想定）。
+		uaInsert(w, t.ta, "b\nc");
+		await t.wait(5);
+		assert.deepEqual(t.sent, ["a", "😀", "\x7f😁", "b\rc"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace（xterm が送る）の後も、textarea の読みは端末の行と同じで、続く変換が消しすぎない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "きょうx");
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8));
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		await t.wait(5);
+		assert.equal(t.ta.value, "きょう", "xterm が DEL を送った 1 文字を textarea からも消す");
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
+		for (let i = 0; i < 3; i++) uaInsert(w, t.ta, null, "deleteContentBackward");
+		uaInsert(w, t.ta, "今日");
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Unidentified" }, 0));
+		await t.wait(5);
+		assert.deepEqual(t.sent, ["き", "ょ", "う", "x", "\x7f", "\x7f", "\x7f", "\x7f", "今日"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace で UA も文字を消した場合（preventDefault を無視）、DEL は 1 回で、textarea を二重に消さない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "あい");
+		const down = key(w, "keydown", { key: "Backspace" }, 8);
+		t.ta.dispatchEvent(down);
+		assert.equal(down.defaultPrevented, true);
+		uaInsert(w, t.ta, null, "deleteContentBackward");
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		await t.wait(5);
+		assert.equal(t.ta.value, "あ");
+		assert.deepEqual(t.sent, ["あ", "い", "\x7f"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] Backspace のキーリピート（keydown が続いて keyup 1 回）は、送った DEL の数だけ textarea からも消し、続く置換が消しすぎない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "abc");
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8));
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace", repeat: true }, 8));
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		await t.wait(5);
+		assert.equal(t.ta.value, "a");
+		t.ta.setSelectionRange(0, 1);
+		uaInsert(w, t.ta, "X", "insertReplacementText");
+		await t.wait(5);
+		assert.deepEqual(t.sent, ["a", "b", "c", "\x7f", "\x7f", "\x7fX"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 読み取り専用では 229 の keydown を止めず、Backspace で textarea の値を書き換えない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "ab");
+		t.term.options.disableStdin = true;
+		const seen = [];
+		// textarea の capture で記録する（xterm の capture リスナーより後に足すので、xterm が伝播を止めても同じ target の capture は呼ばれる）。
+		t.ta.addEventListener("keydown", (e) => seen.push(e.keyCode), true);
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Unidentified" }, 0));
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8));
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		await t.wait(5);
+		assert.deepEqual(seen, [229, 8], "229 の keydown も textarea まで届く");
+		assert.equal(t.ta.value, "ab");
+		assert.deepEqual(t.sent, ["a", "b"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 確定の送信待ちを Backspace が解いた場合も、DEL を textarea へ写し、続く置換がずれない", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	const comp = (type, data) => t.ta.dispatchEvent(new w.CompositionEvent(type, { bubbles: true, composed: true, data }));
+	try {
+		comp("compositionstart", "");
+		uaInsert(w, t.ta, "漢字", "insertCompositionText", { isComposing: true });
+		comp("compositionupdate", "漢字");
+		await t.wait(1);
+		comp("compositionend", "漢字");
+		// xterm の確定 timer の前に Backspace（xterm は確定文字をその場で送り、DEL を送る）。
+		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8));
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		await t.wait(5);
+		assert.equal(t.ta.value, "漢");
+		t.ta.setSelectionRange(0, 1);
+		uaInsert(w, t.ta, "語", "insertReplacementText");
+		await t.wait(5);
+		assert.deepEqual(t.sent, ["漢字", "\x7f", "\x7f語"]);
 	} finally {
 		t.close();
 	}
