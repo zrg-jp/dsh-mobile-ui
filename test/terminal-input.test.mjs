@@ -94,6 +94,30 @@ function physicalKey(t, ch, keyCode, mods = {}) {
 }
 
 /**
+ * Backspace（keyCode 8）の 1 打鍵とキーリピート。UA と同じく、keydown が preventDefault されなかったら、カーソル直前の 1 文字（サロゲートペアは 2 単位）を
+ * ネイティブに消して beforeinput / input（deleteContentBackward）を出す（happy-dom は keydown の既定動作を持たないので、ここで再現する）。
+ * 値が空なら何も消さない（beforeinput だけ出す UA もあるが、ここでは出さない）。戻り値は各 keydown。
+ */
+function uaBackspace(t, { repeat = 1 } = {}) {
+	const w = t.h.window;
+	const downs = [];
+	for (let i = 0; i < repeat; i++) {
+		const down = key(w, "keydown", { key: "Backspace", repeat: i > 0 }, 8);
+		t.ta.dispatchEvent(down);
+		downs.push(down);
+		const e = t.ta.selectionEnd;
+		if (down.defaultPrevented || e === 0) continue;
+		t.ta.dispatchEvent(new w.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: "deleteContentBackward" }));
+		const n = e >= 2 && /[\uDC00-\uDFFF]/.test(t.ta.value[e - 1]) ? 2 : 1;
+		t.ta.value = t.ta.value.slice(0, e - n) + t.ta.value.slice(e);
+		t.ta.setSelectionRange(e - n, e - n);
+		t.ta.dispatchEvent(new w.InputEvent("input", { bubbles: true, composed: true, inputType: "deleteContentBackward" }));
+	}
+	t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+	return downs;
+}
+
+/**
  * iOS（Gboard・IME）の 1 打鍵: keydown(229) → [約 10ms 後] beforeinput/input(insertText, composed) → keyup(keyUpCode)。
  * xterm の差分検出（keydown で予約される setTimeout(0)）は input より先に走る（issue #5835 の時刻差）。
  */
@@ -825,15 +849,15 @@ test("[§5.3 TerminalInputReachesOnce] 改行の挿入は CR、絵文字の置�
 	}
 });
 
-test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace（xterm が送る）の後も、textarea の読みは端末の行と同じで、続く変換が消しすぎない", async () => {
+test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace は UA がネイティブに消し（xterm に見せない）、差分の経路で DEL を 1 回送る。続く変換が消しすぎない", async () => {
 	const t = openTerminal();
 	const w = t.h.window;
 	try {
 		await typeKana(t, "きょうx");
-		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8));
-		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		const [down] = uaBackspace(t);
 		await t.wait(5);
-		assert.equal(t.ta.value, "きょう", "xterm が DEL を送った 1 文字を textarea からも消す");
+		assert.equal(down.defaultPrevented, false, "xterm に見せないので preventDefault されない（ADR-20261028-0330）");
+		assert.equal(t.ta.value, "きょう", "UA が消した 1 文字だけ textarea から消える");
 		t.ta.dispatchEvent(key(w, "keydown", { key: "Unidentified" }, 229));
 		for (let i = 0; i < 3; i++) uaInsert(w, t.ta, null, "deleteContentBackward");
 		uaInsert(w, t.ta, "今日");
@@ -845,16 +869,12 @@ test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace（xterm が送る
 	}
 });
 
-test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace で UA も文字を消した場合（preventDefault を無視）、DEL は 1 回で、textarea を二重に消さない", async () => {
+test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace のネイティブ削除は、DEL が 1 回で、textarea を二重に消さない（xterm の DEL・Backspace の写しと重ならない）", async () => {
 	const t = openTerminal();
-	const w = t.h.window;
 	try {
 		await typeKana(t, "あい");
-		const down = key(w, "keydown", { key: "Backspace" }, 8);
-		t.ta.dispatchEvent(down);
-		assert.equal(down.defaultPrevented, true);
-		uaInsert(w, t.ta, null, "deleteContentBackward");
-		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		const [down] = uaBackspace(t);
+		assert.equal(down.defaultPrevented, false);
 		await t.wait(5);
 		assert.equal(t.ta.value, "あ");
 		assert.deepEqual(t.sent, ["あ", "い", "\x7f"]);
@@ -863,14 +883,12 @@ test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace で UA も文字�
 	}
 });
 
-test("[§5.3 TerminalInputReachesOnce] Backspace のキーリピート（keydown が続いて keyup 1 回）は、送った DEL の数だけ textarea からも消し、続く置換が消しすぎない", async () => {
+test("[§5.3 TerminalInputReachesOnce] Backspace のキーリピート（keydown が続いて keyup 1 回。長押し・ハードウェアキーボード）は、UA が消した数だけ DEL を送り、続く置換が消しすぎない", async () => {
 	const t = openTerminal();
 	const w = t.h.window;
 	try {
 		await typeKana(t, "abc");
-		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8));
-		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace", repeat: true }, 8));
-		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		uaBackspace(t, { repeat: 2 });
 		await t.wait(5);
 		assert.equal(t.ta.value, "a");
 		t.ta.setSelectionRange(0, 1);
@@ -993,8 +1011,8 @@ test("[§5.3 TerminalInputReachesOnce] xterm が値を変えた・自分で送�
 	const cases = {
 		// Enter（xterm が CR を送って値を空にする）
 		enter: async (t, w) => { t.ta.dispatchEvent(key(w, "keydown", { key: "Enter" }, 13)); t.ta.dispatchEvent(key(w, "keyup", { key: "Enter" }, 13)); return ["\r", "x"]; },
-		// keyCode 8 の Backspace（xterm が DEL を送り、本プラグインが textarea へ写す）
-		backspace: async (t, w) => { t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8)); t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8)); return ["\x7f", "x"]; },
+		// keyCode 8 の Backspace（UA がネイティブに消し、本プラグインが差分の DEL を送る。影は消した後の値）
+		backspace: async (t) => { uaBackspace(t); return ["\x7f", "x"]; },
 		// blur（xterm が値を空にする）→ 再 focus
 		blur: async (t) => { t.ta.blur(); t.ta.focus(); return ["x"]; },
 		// 変換の確定（xterm が値から確定文字を送る）
@@ -1027,13 +1045,12 @@ test("[§5.3 TerminalInputReachesOnce] xterm が値を変えた・自分で送�
 	}
 });
 
-test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace を写した後の変換でも、beforeinput の無い後方削除を数え落とさない（写した後の値を影にする）", async () => {
+test("[§5.3 TerminalInputReachesOnce] keyCode 8 の Backspace の後の変換でも、beforeinput の無い後方削除を数え落とさない（消した後の値を影にする）", async () => {
 	const t = openTerminal();
 	const w = t.h.window;
 	try {
 		await typeKana(t, "きょうx");
-		t.ta.dispatchEvent(key(w, "keydown", { key: "Backspace" }, 8));
-		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		uaBackspace(t);
 		await t.wait(5);
 		// 1 つ目の削除にも beforeinput が無い列（影が無ければ起点が無く、xterm に任せて DEL が落ちる）。
 		const d = uaDeleteParts(w, t.ta);
@@ -1169,6 +1186,216 @@ test("[§5.3 TerminalInputReachesOnce] 貼り付け（xterm が送って値を�
 		await t.wait(5);
 		// 端末の行は「ab＋貼り付けた内容」のまま。古い影 ab を起点にすると DEL ×2 が出て ab を消してしまう。
 		assert.deepEqual(t.sent, ["a", "b", "x"]);
+	} finally {
+		t.close();
+	}
+});
+
+// ---- 実機の列の再生（2026-10-28、iPhone iOS 18.7・PWA・Gboard 日本語、「ごきげん」→ 候補「ご機嫌」。ADR-20261028-0330）----
+// test/fixtures/20261028-gboard-gokigen.json は、検証ブランチのアプリ内ロガーの記録から trusted な keydown / beforeinput / input / keyup だけを抜いたもの
+// （v はそのイベントの配送時点の値。ロガーは window の capture なので、本プラグイン・xterm の処理の前）。
+// 再生の UA モデル:
+//  - 記録の beforeinput / input は、値を記録で上書きせず、操作（カーソル前の 1 文字の削除・data の挿入）として当てる。
+//  - keyCode 8 の keydown が preventDefault されなかったら、UA はネイティブに 1 文字消す（beforeinput / input の deleteContentBackward を出す）。
+//    記録では xterm が preventDefault したので、この削除は記録に無い。
+// 記録の読み: Gboard の deleteBackward の連続（濁点の付け替えは 1 回、変換の読みの削除は 3 回）は、最初の 1 回だけが keyCode 8 の keydown になり、
+// 残りは keydown 無しの beforeinput / input になる。修正前は最初の 1 回を xterm が preventDefault して DEL を送るので、変換では textarea から
+// 2 文字しか消えない（記録の値「ごき機嫌」）。後続の 2 回は「keydown で送り済み」として送らないので、端末は「ごきげ機嫌」。
+// 確かめられる範囲: Gboard の内部状態（UITextDocumentProxy・未確定範囲）は再現できない。修正後も Gboard が同じ数（濁点 1・変換 3）だけ消す、
+// という前提で、ネイティブ削除にすると textarea と端末の行が一致し続けることを確かめる。
+const GOKIGEN = JSON.parse(readFileSync(new URL("./fixtures/20261028-gboard-gokigen.json", import.meta.url), "utf8"));
+
+/** 記録の列を再生する。戻り値は、各イベントの配送前に値が記録と一致したか（ネイティブ削除が 1 回も起きなければ、修正前の記録を再現できているはず）。 */
+async function replayDeviceRows(t, rows) {
+	const w = t.h.window;
+	const mismatches = [];
+	let nativeDeletes = 0;
+	const del = () => {
+		const e = t.ta.selectionEnd;
+		if (e === 0) return;
+		const n = e >= 2 && /[\uDC00-\uDFFF]/.test(t.ta.value[e - 1]) ? 2 : 1;
+		t.ta.value = t.ta.value.slice(0, e - n) + t.ta.value.slice(e);
+		t.ta.setSelectionRange(e - n, e - n);
+	};
+	let prevT = rows[0].t;
+	for (const row of rows) {
+		// 実機の間隔を短く詰めて待つ（xterm・本プラグインの 0ms timer を順に走らせる）。
+		if (row.t > prevT) await t.wait(Math.min(row.t - prevT, 12));
+		prevT = row.t;
+		// 記録の値（ロガーの時点）と比べる。input の値は UA の変更の後なので、変更を当ててから比べる。ネイティブ削除が起きた後は記録と違って当然なので比べない。
+		const check = () => { if (nativeDeletes === 0 && t.ta.value !== row.v) mismatches.push(`${row.t} ${row.e}: ${JSON.stringify(t.ta.value)} ≠ ${JSON.stringify(row.v)}`); };
+		if (row.e !== "input") check();
+		if (row.e === "keydown" || row.e === "keyup") {
+			const ev = key(w, row.e, { key: row.k }, row.kc);
+			t.ta.dispatchEvent(ev);
+			if (row.e === "keydown" && row.kc === 8 && !ev.defaultPrevented && t.ta.selectionEnd > 0) {
+				// UA のネイティブな削除（記録には無い。修正前は xterm が preventDefault していた）。
+				nativeDeletes++;
+				t.ta.dispatchEvent(new w.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: "deleteContentBackward" }));
+				del();
+				t.ta.dispatchEvent(new w.InputEvent("input", { bubbles: true, composed: true, inputType: "deleteContentBackward" }));
+			}
+		} else if (row.e === "beforeinput") {
+			t.ta.dispatchEvent(new w.InputEvent("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: row.it, data: row.d }));
+		} else if (row.e === "input") {
+			if (row.it === "deleteContentBackward") del();
+			else {
+				const s = t.ta.selectionStart, e = t.ta.selectionEnd;
+				t.ta.value = t.ta.value.slice(0, s) + row.d + t.ta.value.slice(e);
+				t.ta.setSelectionRange(s + row.d.length, s + row.d.length);
+			}
+			check();
+			t.ta.dispatchEvent(new w.InputEvent("input", { bubbles: true, composed: true, inputType: row.it, data: row.d }));
+		}
+	}
+	await t.wait(10);
+	return { mismatches, nativeDeletes };
+}
+
+test("[§5.3 TerminalInputReachesOnce] 実機の列（Gboard「ごきげん」→「ご機嫌」）の再生: Backspace をネイティブ削除にすると、textarea と端末の行が「ご機嫌」でそろう", async () => {
+	const t = openTerminal();
+	try {
+		const { nativeDeletes } = await replayDeviceRows(t, GOKIGEN.rows);
+		// keyCode 8 の keydown（濁点 2 回・変換 1 回）は xterm に見せず、UA に消させる。
+		assert.equal(nativeDeletes, 3);
+		assert.equal(t.ta.value, "ご機嫌");
+		assert.equal(termLine(t.sent), "ご機嫌");
+		// DEL は削除の数（濁点 2 ＋ 読み 3）だけ。二重にしない。
+		assert.equal(t.sent.join("").split("\x7f").length - 1, 5);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 実機の列の再生モデルの確認: Backspace をネイティブ削除にしない版では、記録の値（「ごき機嫌」）と端末の行（「ごきげ機嫌」）を再現する", async (tt) => {
+	// 再生モデルが記録と合っていることの確認。xterm が keyCode 8 を preventDefault してネイティブ削除が起きない版（be2a06b）だけで成り立つ。
+	// 修正後の版では nativeDeletes が 0 でないので skip する（修正前の版を DSH_MOBILE_UI_CLIENT で読ませて流すと緑になる）。
+	const t = openTerminal();
+	try {
+		const { mismatches, nativeDeletes } = await replayDeviceRows(t, GOKIGEN.rows);
+		if (nativeDeletes !== 0) {
+			tt.skip("Backspace をネイティブ削除にする版（修正後）。修正前の版で流すと記録を再現する");
+			return;
+		}
+		assert.deepEqual(mismatches, [], "各イベントの配送時点の値が記録と一致する");
+		assert.equal(t.ta.value, "ごき機嫌");
+		assert.equal(termLine(t.sent), "ごきげ機嫌");
+	} finally {
+		t.close();
+	}
+});
+
+// ---- Backspace をネイティブ削除にする条件（ADR-20261028-0330）の境界 ----
+
+test("[§5.3 TerminalInputReachesOnce] xterm に任せる Backspace: 修飾キー付き・変換中・先に preventDefault された keydown は、従来どおり xterm が送る", async () => {
+	const comp = (t, type, data) => t.ta.dispatchEvent(new t.h.window.CompositionEvent(type, { bubbles: true, composed: true, data }));
+	const cases = {
+		// Alt+Backspace は xterm が ESC DEL（単語削除）を送る。
+		alt: async (t, w) => { const d = key(w, "keydown", { key: "Backspace", altKey: true }, 8); t.ta.dispatchEvent(d); t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace", altKey: true }, 8)); return { d, sent: ["a", "b", "\x1b\x7f"] }; },
+		// Ctrl+Backspace は xterm が ^H を送る。
+		ctrl: async (t, w) => { const d = key(w, "keydown", { key: "Backspace", ctrlKey: true }, 8); t.ta.dispatchEvent(d); t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace", ctrlKey: true }, 8)); return { d, sent: ["a", "b", "\b"] }; },
+		// 変換中（ハードウェアキーボードの IME）: xterm が確定文字をその場で送り、DEL を送る。既存の変換のテストと同じく空の値から始める。
+		composing: async (t, w) => {
+			t.ta.value = "";
+			t.ta.setSelectionRange(0, 0);
+			comp(t, "compositionstart", "");
+			uaInsert(w, t.ta, "か", "insertCompositionText", { isComposing: true });
+			comp(t, "compositionupdate", "か");
+			// xterm は compositionupdate の後の setTimeout(0) で未確定範囲の終わりを取る。
+			await t.wait(1);
+			const d = key(w, "keydown", { key: "Backspace" }, 8);
+			t.ta.dispatchEvent(d);
+			return { d, sent: ["a", "b", "か", "\x7f"] };
+			// （値を空にしたのはテストの都合。xterm は compositionstart の時点の値の長さを起点にするが、happy-dom ではその前の値を含めて送るため。）
+		},
+		// ページの別のリスナーが先に取り消した keydown（UA は消さない）: 止めずに xterm へ渡す（止めると DEL が出ない）。
+		prevented: async (t, w) => {
+			const cancel = (e) => { if (e.keyCode === 8) e.preventDefault(); };
+			w.addEventListener("keydown", cancel, { capture: true, once: true });
+			const d = key(w, "keydown", { key: "Backspace" }, 8);
+			t.ta.dispatchEvent(d);
+			t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+			return { d, sent: ["a", "b", "\x7f"] };
+		}
+	};
+	for (const [name, run] of Object.entries(cases)) {
+		const t = openTerminal();
+		const w = t.h.window;
+		try {
+			await typeKana(t, "ab");
+			const { d, sent } = await run(t, w);
+			await t.wait(5);
+			assert.equal(d.defaultPrevented, true, `${name}: xterm が受けて preventDefault する`);
+			assert.deepEqual(t.sent, sent, name);
+		} finally {
+			t.close();
+		}
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 影が無く beforeinput も無いネイティブ削除は、keydown の時点の値を起点に DEL を送る", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	try {
+		await typeKana(t, "ab");
+		// 対象外の input（xterm に任せる）で影が無くなる。
+		t.ta.value = "zz";
+		t.ta.setSelectionRange(2, 2);
+		t.ta.dispatchEvent(new w.InputEvent("input", { bubbles: true, composed: true, inputType: "insertFromPaste", data: null }));
+		const down = key(w, "keydown", { key: "Backspace" }, 8);
+		t.ta.dispatchEvent(down);
+		assert.equal(down.defaultPrevented, false);
+		// beforeinput を出さない UA のネイティブ削除。
+		uaInsert(w, t.ta, null, "deleteContentBackward", {}, { beforeinput: false });
+		t.ta.dispatchEvent(key(w, "keyup", { key: "Backspace" }, 8));
+		await t.wait(5);
+		assert.equal(t.ta.value, "z");
+		assert.deepEqual(t.sent, ["a", "b", "\x7f"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 確定の送信待ちを解いた Backspace（xterm が送る）に続くキーリピートは、写しを先に済ませてからネイティブに消す", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	const comp = (type, data) => t.ta.dispatchEvent(new w.CompositionEvent(type, { bubbles: true, composed: true, data }));
+	try {
+		comp("compositionstart", "");
+		uaInsert(w, t.ta, "漢字", "insertCompositionText", { isComposing: true });
+		comp("compositionupdate", "漢字");
+		await t.wait(1);
+		comp("compositionend", "漢字");
+		// 1 回目は送信待ちなので xterm（確定文字 → DEL）。2 回目（リピート、keyup 無し）は送信待ちが解けているのでネイティブ。
+		const [first, second] = uaBackspace(t, { repeat: 2 });
+		await t.wait(5);
+		assert.equal(first.defaultPrevented, true);
+		assert.equal(second.defaultPrevented, false);
+		assert.equal(t.ta.value, "");
+		assert.equal(termLine(t.sent), "");
+		assert.deepEqual(t.sent, ["漢字", "\x7f", "\x7f"]);
+	} finally {
+		t.close();
+	}
+});
+
+test("[§5.3 TerminalInputReachesOnce] 送信待ちを解いた Backspace の写しで値が空になった後のリピートは、xterm が DEL を送る（落とさない。レビュー指摘）", async () => {
+	const t = openTerminal();
+	const w = t.h.window;
+	const comp = (type, data) => t.ta.dispatchEvent(new w.CompositionEvent(type, { bubbles: true, composed: true, data }));
+	try {
+		comp("compositionstart", "");
+		uaInsert(w, t.ta, "字", "insertCompositionText", { isComposing: true });
+		comp("compositionupdate", "字");
+		await t.wait(1);
+		comp("compositionend", "字");
+		// 1 回目: 送信待ちなので xterm（確定文字 → DEL）。2 回目（keyup 前のリピート）: 写しで値が空になるので、xterm に任せる。
+		const [first, second] = uaBackspace(t, { repeat: 2 });
+		await t.wait(5);
+		assert.equal(first.defaultPrevented, true);
+		assert.equal(second.defaultPrevented, true);
+		assert.equal(t.ta.value, "");
+		assert.deepEqual(t.sent, ["字", "\x7f", "\x7f"]);
 	} finally {
 		t.close();
 	}
