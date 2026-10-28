@@ -618,3 +618,364 @@ test("[§5.2 行5a DrawerShadowsRightPanel] ドロワー表示中の右スワイ
 	assert.deepEqual(h.calls, { toggleSidebar: 1, toggleExpanded: 0 });
 	h.close();
 });
+
+// ---- §4.4 セッション行（T309） ----
+
+/** DSH 0.2.0-rc.2 の SessionNodeItem と同じ子の順序の行を sidebarCol に置く（slot, title, time, pin?, rowActions）。 */
+const addSessionRow = (h, { id = "s1", pinned = false, blank = false } = {}) => {
+	const row = h.document.createElement("div");
+	row.setAttribute("data-row-key", `session:${id}`);
+	row.setAttribute("role", "treeitem");
+	row.className = "R_sessionRow";
+	row.innerHTML = blank
+		? '<span class="R_slot"></span><span class="R_title">New</span>'
+		: `<span class="R_slot"></span><span class="R_title">t</span><span class="R_time">1m</span>${pinned ? '<span class="R_pin" role="img"></span>' : ""}<span class="R_rowActions"><button type="button" aria-label="actions">…</button></span>`;
+	h.el("side").append(row);
+	return row;
+};
+/** DSH の行 CSS（ハッシュ化クラス）の hover 切替を模した規則。 */
+const addRowCss = (h) => {
+	const s = h.document.createElement("style");
+	s.textContent = ".R_rowActions{display:none}.R_sessionRow:hover .R_rowActions{display:inline-flex}.R_sessionRow:hover .R_time,.R_sessionRow:hover .R_pin{display:none}.R_pin{display:inline-flex}";
+	h.document.head.append(s);
+};
+
+test("[§4.4 RowStableUnderHover] COARSE ではセッション行の「…」を常時表示し、hover で時刻・ピンの表示を変えない（T309-A）", async () => {
+	// happy-dom は (pointer:coarse) と :has(...) の組合せを評価できないため（20.x で確認）、注入 CSS の構造で検査する。
+	const h = mount();
+	const css = h.document.querySelector("style[data-plugin=dsh-mobile-ui]").textContent;
+	const coarseBlock = /@media \(max-width:1023px\) and \(pointer:coarse\)\{([^@]*)\}/g;
+	const blocks = [...css.matchAll(coarseBlock)].map((m) => m[1]).join("\n");
+	assert.match(blocks, /\[data-row-key\^="session:"\]\[role=treeitem\]>:last-child:has\(button\)\{display:inline-flex !important;\}/);
+	assert.match(blocks, /\[data-row-key\^="session:"\]\[role=treeitem\]>:nth-child\(n\+3\):not\(:last-child\):not\(\[role=img\]\)\{display:inline !important;\}/);
+	assert.match(blocks, /\[data-row-key\^="session:"\]\[role=treeitem\]>\[role=img\]\{display:inline-flex !important;\}/);
+	// ハッシュ化クラス名（DSH の YDXeBa_ 等）や [class*=] には依存しない（spec §3）。
+	assert.doesNotMatch(css, /class\*=|YDXeBa_/);
+	h.close();
+	// セレクタが実際の行の形（子の順序）で意図した子に当たることを、media を外した規則で確かめる。
+	const t = mount();
+	addRowCss(t);
+	const rule = [...css.matchAll(coarseBlock)].map((m) => m[1]).find((b) => b.includes("data-row-key"));
+	const s = t.document.createElement("style");
+	s.textContent = rule.replace(":has(button)", "");
+	t.document.head.append(s);
+	const row = addSessionRow(t, { pinned: true });
+	const [, title, time, pin, actions] = row.children;
+	const display = (el) => t.window.getComputedStyle(el).display;
+	assert.equal(display(actions), "inline-flex", "「…」");
+	assert.equal(display(time), "inline", "時刻");
+	assert.equal(display(pin), "inline-flex", "ピン");
+	assert.notEqual(display(title), "none", "タイトルは触らない");
+	t.close();
+});
+
+test("[§4.4 NoRenameOnDoubleTap] COARSE ではセッション行の dblclick を本体へ届けない（T309）", async () => {
+	const h = mount();
+	const row = addSessionRow(h);
+	let renamed = 0;
+	// DSH の onDoubleClick は #root の React 委譲リスナー（bubble）で受ける。
+	h.el("root").addEventListener("dblclick", () => { renamed++; });
+	row.children[1].dispatchEvent(new h.window.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+	assert.equal(renamed, 0);
+	// 行の外の dblclick（チャット本文の単語選択など）には触らない。
+	h.el("msg").dispatchEvent(new h.window.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+	assert.equal(renamed, 1);
+	h.close();
+	// fine pointer（デスクトップ）では従来どおり改名できる。
+	const d = mount({ coarse: false });
+	const drow = addSessionRow(d);
+	let drenamed = 0;
+	d.el("root").addEventListener("dblclick", () => { drenamed++; });
+	drow.children[1].dispatchEvent(new d.window.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+	assert.equal(drenamed, 1);
+	d.close();
+});
+
+test("[§4.4 CloseOnSessionSwitch] PHONE でドロワーが開いているとき、表示中のセッションが変わったら閉じる（T309-C）", async () => {
+	const h = mount();
+	h.setMainSessions(["a"]);
+	await open(h);
+	assert.equal(h.calls.toggleSidebar, 1);
+	// 一覧の他の更新（表示中は同じ）では閉じない。
+	h.setMainSessions(["a"], ["b"]);
+	assert.equal(h.calls.toggleSidebar, 1);
+	// replaceMain: 新参照の retain（一瞬 2 件）→ 旧参照の release。閉じるのは 1 回だけ。
+	h.setMainSessions(["a", "b"]);
+	await h.flush();
+	assert.equal(h.calls.toggleSidebar, 2);
+	assert.equal(h.document.body.dataset.dshMobileSidebar, "closed");
+	h.setMainSessions(["b"]);
+	assert.equal(h.calls.toggleSidebar, 2);
+	// 閉じているときに切り替わっても開かない（toggle を呼ばない）。
+	h.setMainSessions(["c"]);
+	assert.equal(h.calls.toggleSidebar, 2);
+	h.close();
+	// DSH の実装どおり、閉が再描画で後から DOM に反映される場合: 反映前に a→b→c と続けて切り替わっても、
+	// 2 回目のトグルで開き直さない（独立レビューの指摘）。
+	const a = mount();
+	a.setMainSessions(["a"]);
+	await open(a);
+	const sync = a.ctx.layout.toggleSidebar.bind(a.ctx.layout);
+	a.ctx.layout.toggleSidebar = () => { a.calls.toggleSidebar++; setTimeout(sync, 5); };
+	a.setMainSessions(["a", "b"]);
+	a.setMainSessions(["b"]);
+	a.setMainSessions(["b", "c"]);
+	await new Promise((r) => setTimeout(r, 20));
+	assert.equal(a.calls.toggleSidebar, 3, "open 1 回 + 閉 1 回（偽装の sync 呼出も数える）");
+	assert.equal(a.document.body.dataset.dshMobileSidebar, "closed");
+	a.close();
+	// PHONE でなければ（768–1023px は DSH 本体の挙動に任せる）閉じない。
+	const w = mount({ width: 900 });
+	w.setMainSessions(["a"]);
+	w.ctx.layout.toggleSidebar();
+	w.setMainSessions(["b"]);
+	assert.equal(w.calls.toggleSidebar, 1);
+	w.close();
+});
+
+test("[§3 OptionalSessions] ctx.sessions が無くても他の機能は動き、dispose で購読を外す（T309-C）", async () => {
+	const h = mount({ withSessions: false });
+	h.document.querySelector(".dsh-mobile-ui-fab").click();
+	await h.flush();
+	assert.equal(h.document.body.dataset.dshMobileSidebar, "open");
+	h.close();
+	const t = mount();
+	assert.equal(t.sessionListeners(), 1);
+	t.dispose();
+	assert.equal(t.sessionListeners(), 0, "dispose で購読解除");
+	t.close();
+});
+
+// ---- §6.1 入力欄の自動フォーカス（T310） ----
+
+/** DSH 0.2.0-rc.2 の入力カード（[data-composer-card]）と Lexical の入力欄を centerCol に置く。 */
+const addComposer = (h) => {
+	h.el("center").insertAdjacentHTML("beforeend", '<div data-composer-card id="card"><div id="ed" contenteditable="true" role="textbox" data-composer-input data-lexical-editor="true"></div><button id="send" type="button">send</button></div>');
+	return h.el("ed");
+};
+const pointer = (h, el) => el.dispatchEvent(new h.window.PointerEvent("pointerdown", { bubbles: true }));
+
+test("[§6.1 NoProgrammaticComposerFocus] COARSE では、ユーザー操作の無い入力欄へのフォーカスを次のタスクで外す（T310）", async () => {
+	const h = mount();
+	const ed = addComposer(h);
+	// セッション行のタップで開いた → DSH の InputBar が focus する、の再現。
+	pointer(h, h.el("side-btn"));
+	ed.focus();
+	assert.equal(h.document.activeElement, ed, "同期の blur はしない（再フォーカスとの再帰を避ける）");
+	await h.flush();
+	assert.notEqual(h.document.activeElement, ed);
+	h.close();
+	// fine pointer（デスクトップ）ではフォーカスを保つ。
+	const d = mount({ coarse: false });
+	const ded = addComposer(d);
+	ded.focus();
+	await d.flush();
+	assert.equal(d.document.activeElement, ded);
+	d.close();
+});
+
+test("[§6.1 UserTapKeepsFocus] 入力欄・入力カードを直近にタップしたときのフォーカスは外さない（T310）", async () => {
+	for (const [kind, id] of [["pointerdown", "ed"], ["touchstart", "ed"], ["pointerdown", "send"]]) {
+		const h = mount();
+		const ed = addComposer(h);
+		const target = h.el(id);
+		if (kind === "pointerdown") pointer(h, target);
+		else touchStart(h, target, [10, 700]);
+		ed.focus();
+		await h.flush();
+		assert.equal(h.document.activeElement, ed, `${kind} on ${id}`);
+		h.close();
+	}
+	// 外付けキーボードの操作の直後（ショートカット等）も外さない。
+	const k = mount();
+	const ked = addComposer(k);
+	k.document.dispatchEvent(new k.window.KeyboardEvent("keydown", { key: "k", metaKey: true }));
+	ked.focus();
+	await k.flush();
+	assert.equal(k.document.activeElement, ked, "keydown");
+	k.close();
+	// 長押し: 押下の開始から 1.5 秒を超えてフォーカスしても、押下中と押下の終了直後は外さない（独立レビューの指摘）。
+	const l = mount();
+	const led = addComposer(l);
+	const realNow = Date.now;
+	try {
+		let now = realNow();
+		Date.now = () => now;
+		pointer(l, led);
+		now += 3000;
+		led.focus();
+		await l.flush();
+		assert.equal(l.document.activeElement, led, "押下中");
+		led.blur();
+		led.dispatchEvent(new l.window.PointerEvent("pointerup", { bubbles: true }));
+		now += 1000;
+		led.focus();
+		await l.flush();
+		assert.equal(l.document.activeElement, led, "押下の終了から 1 秒");
+	} finally {
+		Date.now = realNow;
+	}
+	l.close();
+	// 入力欄をタップした後でも、その後にセッション行を触って開いた場合は外す。
+	const r = mount();
+	const red = addComposer(r);
+	pointer(r, red);
+	pointer(r, r.el("side-btn"));
+	red.focus();
+	await r.flush();
+	assert.notEqual(r.document.activeElement, red);
+	r.close();
+});
+
+test("[§6.1 NoProgrammaticComposerFocus] 期限後・メニュー/ダイアログ内・入力欄以外は対象を正しく分ける（T310）", async () => {
+	// 期限（1.5 秒）を過ぎた操作は、ユーザー操作とみなさない。
+	const h = mount();
+	const ed = addComposer(h);
+	const realNow = Date.now;
+	try {
+		let now = realNow();
+		Date.now = () => now;
+		pointer(h, ed);
+		ed.dispatchEvent(new h.window.PointerEvent("pointerup", { bubbles: true }));
+		now += 1501;
+		ed.focus();
+		await h.flush();
+		assert.notEqual(h.document.activeElement, ed, "期限後");
+		now += 1;
+		pointer(h, ed);
+		ed.dispatchEvent(new h.window.PointerEvent("pointerup", { bubbles: true }));
+		now += 1500;
+		ed.focus();
+		await h.flush();
+		assert.equal(h.document.activeElement, ed, "期限ちょうど");
+	} finally {
+		Date.now = realNow;
+	}
+	h.close();
+	// dispose 後は、予約済みの blur も実行しない（独立レビューの指摘）。
+	const z = mount();
+	const zed = addComposer(z);
+	zed.focus();
+	z.dispose();
+	await z.flush();
+	assert.equal(z.document.activeElement, zed, "dispose 後");
+	z.close();
+	// ダイアログ内の入力欄（改名など）と、入力欄以外（textarea）には触らない。
+	const t = mount();
+	t.el("center").insertAdjacentHTML("beforeend", '<div role="dialog"><div id="dlg" contenteditable="true" data-composer-input></div></div>');
+	t.el("dlg").focus();
+	t.el("ta").focus();
+	await t.flush();
+	assert.equal(t.document.activeElement, t.el("ta"));
+	t.el("dlg").focus();
+	await t.flush();
+	assert.equal(t.document.activeElement, t.el("dlg"), "dialog 内");
+	t.close();
+});
+
+// ---- §6.2 Enter で改行（T344） ----
+
+/**
+ * 入力欄を置き、Lexical の代わりに keydown（送信）と beforeinput（改行）を数える。
+ * happy-dom の InputEvent は getTargetRanges を持たないので、iOS Safari と同じく持つように補う（ranges=true）。
+ */
+const mountComposer = ({ ranges = true, ...opt } = {}) => {
+	const h = mount(opt);
+	// happy-dom はクラスを Window 間で共有しうるため、prototype は書き換えず、この window にだけ派生クラスを置く。
+	if (ranges) h.window.InputEvent = class extends h.window.InputEvent { getTargetRanges() { return []; } };
+	const ed = addComposer(h);
+	const seen = { submit: 0, lineBreak: 0 };
+	// Lexical は root（入力欄）に keydown / beforeinput を登録する（target 段階）。
+	ed.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) seen.submit++; });
+	ed.addEventListener("beforeinput", (e) => { if (e.inputType === "insertLineBreak") seen.lineBreak++; });
+	const enter = (init = {}, el = ed) => {
+		const ev = new h.window.KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true, ...init });
+		el.dispatchEvent(ev);
+		return ev;
+	};
+	return { h, ed, seen, enter };
+};
+
+test("[§6.2 EnterInsertsLineBreak] COARSE の入力欄で修飾なしの Enter は送信せず、beforeinput insertLineBreak を送る（T344）", async () => {
+	const { h, seen, enter } = mountComposer();
+	const ev = enter();
+	assert.equal(ev.defaultPrevented, true);
+	assert.deepEqual(seen, { submit: 0, lineBreak: 1 });
+	h.close();
+	// fine pointer（デスクトップ）では DSH のまま（Enter で送信）。
+	const d = mountComposer({ coarse: false });
+	d.enter();
+	assert.deepEqual(d.seen, { submit: 1, lineBreak: 0 });
+	d.h.close();
+});
+
+test("[§6.2 EnterInsertsLineBreak] IME 変換中・修飾キー・候補選択中・入力欄外・dialog 内では触らない（T344）", async () => {
+	const { h, ed, seen, enter } = mountComposer();
+	enter({ isComposing: true });
+	enter({ keyCode: 229 });
+	ed.setAttribute("data-composer-composing", "");
+	enter();
+	ed.removeAttribute("data-composer-composing");
+	assert.deepEqual(seen, { submit: 3, lineBreak: 0 }, "変換中（Lexical / DSH が自分で判定する）");
+	for (const mod of ["shiftKey", "ctrlKey", "metaKey", "altKey"]) enter({ [mod]: true });
+	assert.equal(seen.lineBreak, 0, "修飾キー付き");
+	// 入力補完の候補が強調されている間は、Enter で候補を確定させる。
+	const list = h.document.createElement("div");
+	list.setAttribute("role", "listbox");
+	list.setAttribute("aria-activedescendant", "opt-1");
+	h.document.body.append(list);
+	enter();
+	list.remove();
+	assert.equal(seen.lineBreak, 0, "候補選択中");
+	// 入力欄の外（textarea）と dialog 内の入力欄。
+	const ev = enter({}, h.el("ta"));
+	assert.equal(ev.defaultPrevented, false);
+	h.el("center").insertAdjacentHTML("beforeend", '<div role="dialog"><div id="dlg" contenteditable="true" data-composer-input></div></div>');
+	assert.equal(enter({}, h.el("dlg")).defaultPrevented, false);
+	// 前面の UI が処理済みの Enter。
+	const handled = new h.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+	handled.preventDefault();
+	ed.dispatchEvent(handled);
+	assert.equal(seen.lineBreak, 0);
+	// 条件が外れた後は改行になる（検査が効いていることの確認）。
+	enter();
+	assert.equal(seen.lineBreak, 1);
+	// compositionend 直後（10ms 以内）の確定 Enter は、属性・フラグが消えていても本体へ渡す（独立レビューの指摘）。
+	const realNow = Date.now;
+	try {
+		let now = realNow();
+		Date.now = () => now;
+		ed.dispatchEvent(new h.window.CompositionEvent("compositionend", { bubbles: true }));
+		now += 10;
+		enter();
+		assert.equal(seen.lineBreak, 1, "確定直後（前の改行 1 回のまま）");
+		now += 1;
+		enter();
+		assert.equal(seen.lineBreak, 2, "猶予の後は改行");
+	} finally {
+		Date.now = realNow;
+	}
+	h.close();
+});
+
+test("[§6.2 EnterNewlineOptOut] localStorage の dsh-mobile-ui:enterNewline='0' と、beforeinput 非対応環境では従来どおり送信する（T344）", async () => {
+	const { h, seen, enter } = mountComposer();
+	h.window.localStorage.setItem("dsh-mobile-ui:enterNewline", "0");
+	enter();
+	assert.deepEqual(seen, { submit: 1, lineBreak: 0 });
+	h.window.localStorage.setItem("dsh-mobile-ui:enterNewline", "1");
+	enter();
+	assert.deepEqual(seen, { submit: 1, lineBreak: 1 }, "'0' 以外は有効（再読込なしで反映）");
+	h.close();
+	// InputEvent に getTargetRanges が無い環境では、Lexical が beforeinput を処理しないので奪わない。
+	const n = mountComposer({ ranges: false });
+	n.enter();
+	assert.deepEqual(n.seen, { submit: 1, lineBreak: 0 });
+	n.h.close();
+	// dispose 後は触らない。
+	const z = mountComposer();
+	z.h.dispose();
+	z.enter();
+	assert.deepEqual(z.seen, { submit: 1, lineBreak: 0 });
+	z.h.close();
+});
