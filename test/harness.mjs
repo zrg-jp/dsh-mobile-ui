@@ -22,9 +22,11 @@ const FRAME_HTML = `<div id="root"><div id="frame" data-sidebar-collapsed>
  * @param {number} [opt.width=390] innerWidth
  * @param {boolean} [opt.coarse=true] (pointer:coarse) の真偽
  * @param {boolean} [opt.withFrame=true] AppFrame を描画するか
+ * @param {boolean} [opt.reducedMotion=false] prefers-reduced-motion:reduce を CSS の media で一致させるか
  */
-export function mount({ width = 390, height = 800, coarse = true, withFrame = true } = {}) {
-	const window = new Window({ width, height, url: "http://localhost/" });
+export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false } = {}) {
+	// prefers-reduced-motion は happy-dom の device 設定で CSS のカスケードに反映される（20.14.6 で確認）。
+	const window = new Window({ width, height, url: "http://localhost/", settings: { device: { prefersReducedMotion: reducedMotion ? "reduce" : "no-preference" } } });
 	const document = window.document;
 	document.write(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${withFrame ? FRAME_HTML : '<div id="root"></div>'}</body></html>`);
 
@@ -50,10 +52,12 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 		}
 		return media.get(q);
 	};
+	// 実ブラウザと同じく、matches が実際に変わった media だけに change を通知する。
 	const setViewport = (next) => {
+		const before = new Map([...media].map(([q, m]) => [q, m.matches]));
 		Object.assign(state, next);
 		if (next.width !== undefined) window.happyDOM.setViewport({ width: next.width });
-		for (const m of media.values()) for (const f of m.listeners) f({ matches: m.matches });
+		for (const [q, m] of media) if (m.matches !== before.get(q)) for (const f of m.listeners) f({ matches: m.matches });
 	};
 
 	// visualViewport は happy-dom に無いので、resize を発火できる簡易版を置く。
@@ -100,17 +104,37 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 		window, document, ctx, calls, flush, dispose, setViewport, visualViewport,
 		resizeCount: () => windowResizes,
 		setRightExpanded: (v) => { rightExpanded = v; },
+		// DSH の Modal 相当（createPortal(..., document.body) される全画面の前面レイヤ）を body 直下に足し、
+		// その中の要素（タッチの起点）を返す。
+		addPortal: () => {
+			const layer = document.createElement("div");
+			layer.setAttribute("role", "dialog");
+			layer.setAttribute("aria-modal", "true");
+			layer.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;";
+			layer.innerHTML = "<p>modal</p>";
+			document.body.append(layer);
+			return layer.firstElementChild;
+		},
 		el: (id) => document.getElementById(id),
 		close: () => { dispose(); window.happyDOM.close(); }
 	};
 }
 
-/** 単指の touchstart → touchend を target から発火する。 */
-export function swipe(h, target, from, to) {
+/** 単指の touchstart を target から発火する。終了は返り値の end(to) で発火する（途中に操作を挟む検査用）。 */
+export function touchStart(h, target, from) {
 	const { window } = h;
 	const mk = (x, y) => new window.Touch({ identifier: 1, target, clientX: x, clientY: y });
 	const start = mk(from[0], from[1]);
-	const end = mk(to[0], to[1]);
 	target.dispatchEvent(new window.TouchEvent("touchstart", { bubbles: true, touches: [start], changedTouches: [start] }));
-	target.dispatchEvent(new window.TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [end] }));
+	return {
+		end(to) {
+			const end = mk(to[0], to[1]);
+			target.dispatchEvent(new window.TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [end] }));
+		}
+	};
+}
+
+/** 単指の touchstart → touchend を target から発火する。 */
+export function swipe(h, target, from, to) {
+	touchStart(h, target, from).end(to);
 }

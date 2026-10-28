@@ -49,7 +49,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:212](../lib/client.js#L212)）。
 これは全面的な無介入への復帰ではない。次の介入は残る。
 - `#root` の高さ、入力 16px、セーフエリア、viewport meta（frame に依存しない）
-- スワイプ: frame が無くても isOpen()=false なので、右スワイプで `toggleSidebar()` を呼びうる
+- スワイプ: frame が無くても isOpen()=false なので、右スワイプで `toggleSidebar()` を呼びうる。frame 外起点を除外するガード（§5.1 `SwipeOnlyInsideFrame`）は、境界を決められないため掛けない
 
 子の順序だけが変わった場合は CSS が一致し続け、別の先頭要素を fixed／inert にする。この場合は劣化ではなく誤作動になる。
 
@@ -58,7 +58,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 ### 4.1 レイアウト（CSS、[client.js:17-79](../lib/client.js#L17-L79)）
 - frame の `grid-template-columns` を `minmax(0,1fr) 0px 0px !important` にする。DSH がインライン style で指定する値より優先される。
 - sidebarCol を `position:fixed`、幅 `min(85vw,300px)`、`z-index:60` のドロワーにする。grid のフローから外れるため、centerCol が第 1 列に入る。
-- 閉時は `translateX(-110%)` と `visibility:hidden` で画面外へ出す。transition は .25s。`prefers-reduced-motion:reduce` で transition を無効にするのは開く側だけで、閉じる側は詳細度の差で .25s のまま残る（[KI-3](known-issues.md)）。
+- 閉時は `translateX(-110%)` と `visibility:hidden` で画面外へ出す。transition は .25s。`prefers-reduced-motion:reduce` では開閉どちらの transition も無効にする（閉時のセレクタと同じ詳細度の規則を reduced-motion 側に置く。KI-3）。
 - 開時は frame の `::after` を `z-index:59`、`rgba(0,0,0,.35)` の全面バックドロップとして表示する。
 - frame 直下の `[data-side]`（列リサイズ用ハンドル）を非表示にする。
 
@@ -78,7 +78,11 @@ MutationObserver が文書全体の childList と `data-sidebar-collapsed` の�
 |---|---|---|---|
 | FAB の click | FAB は `PHONE ∧ body=closed` のときだけ表示される | トグル（開く） | [client.js:47-55](../lib/client.js#L47-L55)、[client.js:245-249](../lib/client.js#L245-L249) |
 | pointerdown（capture 段階） | `PHONE ∧ 開`、かつ target が sidebarCol 外・FAB 外・frame 内 | `preventDefault` と `stopPropagation` の後にトグル（閉じる） | [client.js:254-268](../lib/client.js#L254-L268) |
-| keydown `Escape` | `PHONE ∧ 開` | トグル（閉じる）し、`fab.focus()` を呼ぶ | [client.js:275-279](../lib/client.js#L275-L279) |
+| keydown `Escape` | `PHONE ∧ 開`、かつ `defaultPrevented` でなく、`[aria-modal=true]` が文書に無い（KI-7） | トグル（閉じる）。閉じが frame に反映され、`body=closed`（FAB 表示）に同期した時点で `fab.focus()` を呼ぶ（KI-1） | client.js の `onKeyDown` / `syncState` |
+
+不変条件 `EscapeRefocusesFab`: Escape で閉じたとき、FAB へのフォーカスは `body[data-dsh-mobile-sidebar=closed]` に更新した後に行う（`toggleSidebar()` は DSH のストアを更新するだけで、`data-sidebar-collapsed` は再描画で後から変わるため）。予約は Escape から 1 秒以内の最初の閉で消費する。Escape 以外の経路（FAB・バックドロップ・スワイプ）でトグルすると予約を取り消すので、その経路の閉ではフォーカスを動かさない。予約が有効な間（閉の反映待ち）の Escape は無視する（`isOpen()` が古い値を返し、再トグルで開に戻るのを防ぐ）。
+
+不変条件 `EscapeYieldsToForeground`（KI-7）: 前面の UI が処理した Escape（`defaultPrevented`）と、`[aria-modal=true]` の要素が存在する間の Escape では、ドロワーを閉じない。DSH 0.2.0-rc.2 の Modal（ui-primitives `useModalLayer`）は document の bubble 段階で処理し、本プラグインより後に登録されるため、`defaultPrevented` だけでは防げない。
 
 不変条件 `BackdropOnlyInsideFrame`: frame 外の target（`document.body` 直下へ portal される Modal やメニューなど）への pointerdown では、ドロワーを閉じない。
 
@@ -88,9 +92,15 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 ### 5.1 候補の確定（touchstart、[client.js:305-323](../lib/client.js#L305-L323)）
 - 候補になるのは、`COARSE` かつ単指で、`textarea,input,[contenteditable=true]` の外から始まったタッチだけ。
+- 不変条件 `SwipeOnlyInsideFrame`（KI-5）: frame があるとき、起点が frame 外（`document.body` へ portal されたモーダル・メニュー・トーストなど）のタッチは候補にしない。
+  pointerdown の `BackdropOnlyInsideFrame` と同じ境界にそろえる。例外は FAB（frame 外だが、本プラグインの開く操作の起点なので候補にする）。
+  frame が無いとき（§3 SafeDegrade）はこのガードを掛けない。
 - 開始時に、起点座標、`edge = x ≤ 28`、横スクロール祖先の有無、全祖先が左端にあるか（`scrollLeft ≤ 0`）を記録する。
   横スクロール祖先とは、`scrollWidth > clientWidth+1` かつ `overflow-x` が `auto` / `scroll` の祖先要素を指す（body は含まない）。
 - `touchcancel` が来たら候補を破棄する。
+- 不変条件 `DropSwipeOnViewportChange`（T345）: 候補の確定後、`PHONE` / `COARSE` の change、または幅が変わる `window` の `resize`（回転など）が来たら候補を破棄する。
+  開始時の座標・`edge`・横スクロール祖先は変化前のレイアウトで測ったものだから。幅の変わらない `resize`（§6 で本プラグインがキーボードの出入りごとに再送するもの）では破棄しない。
+  （Idea from kuraneko1/dsh-mobile-maxxing 24e2e49, MIT。実装は独自）
 
 ### 5.2 判定（touchend、[client.js:324-359](../lib/client.js#L324-L359)）
 `dx`、`dy` は終了点と開始点の差で、途中の軌跡は見ない。上から順に評価し、最初に該当した行で決まる。
@@ -114,9 +124,9 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 - `RightPanelFirst`: 右パネル展開中の右スワイプは、サイドバーを開かない（表の行 5 で終わる。ADR-20261023-1750 の優先順位）。
 - `DrawerShadowsRightPanel`: `PHONE` でドロワーが開いている間、右スワイプは右パネルを畳まない（行 5a。ADR-20261024-0420）。
 
-帰結として、768–1023px の coarse 端末（iPad 縦など）で有効なスワイプは、右パネルを畳む操作（行 5）だけになる。1024px 以上から始めたタッチはスワイプにならない（[KI-4](known-issues.md)）。`COARSE` と `PHONE` を検査する時点は異なる。`COARSE` は touchstart 時だけ、`PHONE` は touchend 時に検査する。
+帰結として、768–1023px の coarse 端末（iPad 縦など）で有効なスワイプは、右パネルを畳む操作（行 5）だけになる。1024px 以上から始めたタッチはスワイプにならない（[KI-4](known-issues.md)）。`COARSE` と `PHONE` を検査する時点は異なる。`COARSE` は touchstart 時に、`PHONE` は touchend 時に検査する。その間に `PHONE` / `COARSE` が変化したら候補を破棄する（§5.1 `DropSwipeOnViewportChange`）。
 
-起点の要素は限定しない。frame 外（`document.body` へ portal されたモーダルなど）から始まったタッチも判定対象になる（[KI-5](known-issues.md)）。
+起点の要素は frame 内と FAB に限る（§5.1 `SwipeOnlyInsideFrame`。KI-5 で変更）。
 
 ## 6. viewport・キーボード・セーフエリア
 
@@ -147,7 +157,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 - 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。iPad と Android は未確認。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、20 件）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、25 件）。各テストは名前の `[§n]` で本書の節に対応する。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
 
 ## 9. 既知の問題・未確定事項
