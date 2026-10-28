@@ -10,11 +10,15 @@ DSH Web GUI をスマホ・タブレットで使いやすくするローカル c
   スマホ幅ではサイドバーをドロワー化し、中央カラム最小幅 400px 由来の横はみ出しを解消。
 - **Swipe gestures**: right-swipe from the left half opens the sidebar; right-swipe from the left edge collapses the right panel (diff viewer etc.) back to the chat; left-swipe closes the sidebar. Guards against horizontal scrollers (allowed again once scrolled fully left), text selection, and edit areas. Passive listeners only — native scrolling is never blocked.
   スワイプ操作: 左半分からの右スワイプでサイドバー、左端からの右スワイプで右パネルから戻る、左スワイプで閉じる。
-- **iOS keyboard & zoom fixes**: viewport meta (`maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content`), 16px inputs to stop focus auto-zoom, and `visualViewport` tracking so the keyboard does not cover the composer in PWA (standalone/fullscreen) mode.
-  iOS のフォーカスズーム抑止と、PWA でキーボードが入力欄を覆う問題の補正。
+- **iOS keyboard & zoom fixes**: viewport meta merged per directive (`width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content`; other directives are kept, no zoom limit is added, so pinch-zoom stays available), 16px inputs to stop focus auto-zoom, and `visualViewport` tracking so the keyboard does not cover the composer in PWA (standalone/fullscreen) mode. Tracking and swipe gestures pause while pinch-zoomed.
+  iOS のフォーカスズーム抑止（入力 16px）と、PWA でキーボードが入力欄を覆う問題の補正。viewport meta は項目単位でマージし、ズームは制限しない（ピンチ中は追従を止める。ADR-20261026-1450）。
 - **Portal overlays stay in view**: overlays portaled to `document.body` (the model picker, modals, toasts) are translated by the same visual-viewport offset as `#root`, so the iOS keyboard no longer pushes them off-screen.
   body 直下へ portal されるオーバーレイ（モデル選択メニュー等）も `#root` と同じ補正を受け、キーボード表示中も画面内に留まる（KI-10、ADR-20261024-1646）。
 - **Safe-area padding** for notch / home-indicator in PWA display modes.
+- **Header clearance & right panel**: the conversation title starts right of the FAB (via DSH's own `--dsh-frame-leading-clearance`); the FAB hides while the full-screen right panel is open.
+  会話タイトルを FAB の右から始め、右パネル（全画面）展開中は FAB を隠す（issue #12）。
+- **Terminal on touch**: tapping the right-panel terminal focuses xterm's input (shows the keyboard); a vertical drag scrolls the scrollback.
+  右パネルのターミナルはタップでキーボード、縦ドラッグでスクロール（T311 / T343）。
 
 ## Install / 導入
 
@@ -52,7 +56,7 @@ The current specification is [docs/spec.md](docs/spec.md); decision records live
 
 - Developed against `@deepseek-ai/dsh-web-app` 0.2.0-rc.2 (web profile).
 - `:has()` requires iOS 15.4+ / modern browsers; older browsers keep the stock layout.
-- `maximum-scale=1` was expected to be ignored by iOS for manual pinch-zoom, but pinch-zoom has been reported not to work in iPhone PWA mode (see [known issues](docs/known-issues.md) KI-8). Primary targets are iPhone PWA and iPad.
+- Earlier versions added `maximum-scale=1`, and pinch-zoom was reported not to work in iPhone PWA mode. It is no longer added; the fix is awaiting confirmation on a device (see [known issues](docs/known-issues.md) KI-8). Primary targets are iPhone PWA and iPad.
 
 ## Development / 開発
 

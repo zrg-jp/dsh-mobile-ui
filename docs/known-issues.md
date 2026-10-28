@@ -1,7 +1,7 @@
 # 既知の問題
 
-対象: `lib/client.js`（ブランチ `chore/dev-infra` 時点）、`@deepseek-ai/dsh-web-app` 0.2.0-rc.2。
-各項目は GitHub issue（#1〜#8、#11）に転記済み。進捗と議論は issue で扱い、確定した仕様の変更は spec.md に反映する。
+対象: `lib/client.js`（ブランチ `feat/chrome-terminal` 時点）、`@deepseek-ai/dsh-web-app` 0.2.0-rc.2。
+各項目は GitHub issue（#1〜#8、#11、#12）に転記済み。進捗と議論は issue で扱い、確定した仕様の変更は spec.md に反映する。
 特記のない限り、コードと DSH 配布物を読んで導いた推定であり、実機では観測していない。
 
 **モバイルへの影響の目安**: iPhone のソフトウェアキーボードには Escape キーが無い。そのため Escape 起点の問題（KI-1、KI-7）は、
@@ -9,16 +9,17 @@
 
 | ID | 概要 | 影響範囲 | 状態 |
 |---|---|---|---|
-| KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 未着手（[#1](https://github.com/HARU-pc/dsh-mobile-ui/issues/1)） |
-| KI-2 | ピンチズームで `#root` の高さが縮む | KI-8 次第 | 保留（[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
-| KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 未着手（[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
+| KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#1](https://github.com/HARU-pc/dsh-mobile-ui/issues/1)） |
+| KI-2 | ピンチズームで `#root` の高さが縮む | iPhone PWA（KI-8 の修正で顕在化） | 対応済み・実機確認待ち（ADR-20261026-1450、[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
+| KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
 | KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/HARU-pc/dsh-mobile-ui/issues/4)） |
-| KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 未着手（[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
+| KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
 | KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 記録のみ（[#6](https://github.com/HARU-pc/dsh-mobile-ui/issues/6)） |
-| KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 未着手（[#7](https://github.com/HARU-pc/dsh-mobile-ui/issues/7)） |
+| KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#7](https://github.com/HARU-pc/dsh-mobile-ui/issues/7)） |
 | KI-9 | 入力欄をタップすると、入力欄が画面の上へ外れていく | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-0450、2026-10-24 に実機で確認） |
-| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 未着手（[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
+| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
 | KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/HARU-pc/dsh-mobile-ui/issues/11)） |
+| KI-11 | FAB が会話のセッション名・右パネルのファイル名の先頭を隠す | スマホ | 対応済み・実機確認待ち（ADR-20261026-1800、[#12](https://github.com/HARU-pc/dsh-mobile-ui/issues/12)） |
 
 ## KI-1 Escape で閉じた後、フォーカスが FAB に戻らない（旧 Q1）
 
@@ -28,21 +29,30 @@
   フォーカスの行き先は UA 次第になる。
 - **期待**: 閉じた後、フォーカスが FAB に移る。
 - **修正案**: `syncState()` を先に同期的に呼んでから `focus()` する。または `requestAnimationFrame` の後で focus する。
-- **テスト**: happy-dom は `display:none` の要素でも focus できてしまう可能性があるため、検査の方法を併せて検討する。
+- **テスト**: happy-dom は `display:none` の要素でも focus できてしまう（20.14.6 で確認）ため、focus を呼んだ時点の body 属性で検査する。
+- **対応**: Escape でフォーカスの予約（期限 1 秒）を置き、`syncState()` が閉を観測して body 属性と inert を更新した直後に `fab.focus()` する。
+  DSH 0.2.0-rc.2 の `toggleSidebar()` はストア（`narrowExpanded`）を反転するだけで、frame の属性は再描画後に変わるため、
+  「toggle 直後に同期 syncState → focus」だけでは足りない（直後の syncState は呼ぶが、この時点ではまだ開のまま）。
 
 ## KI-2 ピンチズームで `#root` の高さが縮む（旧 Q3）
 
 - **現象（推定）**: `visualViewport.resize` は scale を区別せず、`--dsh-mobile-vvh` に `visualViewport.height` を入れる。
   倍率 2 なら、レイアウト座標上の `#root` の高さは半分になる。
-- **状態**: KI-8（そもそもピンチが効かない）を直すまでは発生しない。KI-8 を直すときに同時に扱う。
-- **修正案**: `vv.scale` が 1 から十分に離れている間は更新しない。またはキーボードによる縮みだけを反映する。
+- **状態**: 対応済み・実機確認待ち。KI-8 と同時に扱った。
+- **対応**: ADR-20261026-1450。`|visualViewport.scale − 1| > 0.01` の間は `--dsh-mobile-vvh` / `--dsh-mobile-vvtop` も
+  `window` への `resize` 再送も更新せず、等倍へ戻った後の最初のイベントで追従し直す（spec.md §6 `PinchFreezesRoot`）。
+  あわせて、拡大中の単指パンがスワイプとして誤発火しないよう、開始時・終了時にズーム中ならスワイプにしない（spec.md §5 `NoSwipeWhileZoomed`）。
+- **残る制限（推定）**: ズーム中にキーボードが出入りしても `#root` は直前の高さ・上端のまま。拡大したまま入力欄へフォーカスすると
+  iOS のパンに追従しない。ピンチ終了時に等倍のイベントが来なければ、次のイベントまで古い値が残る。
 
 ## KI-3 reduced-motion 設定でも閉じるアニメーションが残る（旧 Q6）
 
 - **現象（CSS の読解による）**: 閉時のセレクタ `[data-sidebar-collapsed]:has(> [data-rightbar-col])>:first-child` の詳細度は (0,3,0) で、
   reduced-motion 側の `:has(> [data-rightbar-col])>:first-child` の (0,2,0) より高い。このため、閉じるときは `transition:transform .25s, visibility 0s .25s` が残る。
 - **修正案**: reduced-motion 側に、閉時のセレクタと同じ詳細度のルールを追加する。
-- **テスト**: happy-dom の CSS カスケードで、computed の `transition` を検査できるか確認する。
+- **テスト**: happy-dom 20.14.6 は `settings.device.prefersReducedMotion` を media と詳細度つきのカスケードに反映するため、
+  computed の `transition` で開閉の両方を検査する（修正前の版では閉で赤になることを確認）。実ブラウザの描画（アニメーションが実際に止まるか）は実機で確認する。
+- **対応**: reduced-motion の media に `[data-sidebar-collapsed]:has(> [data-rightbar-col])>:first-child{transition:none;}` を追加した。
 
 ## KI-4 iPad 横（≥1024px）ではスワイプが効かない（旧 Q4）
 
@@ -60,6 +70,10 @@
   背後の右パネルが展開中ならそれが畳まれ、そうでなければ背後のサイドバーが開く。
 - **修正案**: touchstart で起点が frame 外なら候補にしない（pointerdown と同じ境界にそろえる）。
   これは軽微な修正で、テストも書ける（`harness.mjs` に portal 要素を足す）。
+- **対応**: touchstart で、frame があり起点が frame 外なら候補にしない（spec §5.1 `SwipeOnlyInsideFrame`）。
+  判断: FAB（body 直下）は例外として候補に残す（FAB 上の右スワイプは「開く」と一致し、背後の誤操作ではないため）。
+  frame が無いとき（SafeDegrade）は境界が無いので掛けない（従来どおり）。テストは `harness.mjs` の `addPortal()`（role=dialog の全画面レイヤ）で行う。
+  残る制限: frame 内に描画される前面 UI（frame の子孫として描かれるポップオーバー等）は区別しない。
 
 ## KI-6 coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない（旧 Q9）
 
@@ -77,6 +91,11 @@
   ドロワーも閉じる。ただし Modal のリスナーが後に登録されて後に実行される場合は、`defaultPrevented` を見ても防げない。
 - **修正案**: `event.defaultPrevented` を確認する。あわせて、`[aria-modal=true]` が存在する間は Escape を無視する。
 - **影響**: 外付けキーボードのときだけ起きる。
+- **対応**: Escape のハンドラで `event.defaultPrevented` と `document.querySelector("[aria-modal=true]")` を確認し、どちらかなら何もしない（spec §4.3 `EscapeYieldsToForeground`）。
+  0.2.0-rc.2 の配布物で、Modal は `[role=dialog][aria-modal=true]` を描画し document の bubble で Escape を処理すること、
+  MenuSurface 系は capture 段階で `preventDefault` することを確認した。
+  残る制限: aria-modal を付けず、preventDefault もしない前面 UI とは引き続き同時に閉じうる。0.2.0-rc.2 では HoverCard の preview
+  （window の bubble 段階で処理）が該当する。Tooltip（openOnClick）は capture で `stopPropagation` するため対象外。
 
 ## KI-8 ピンチによる拡大縮小が効かない（旧 Q5）
 
@@ -91,8 +110,14 @@
   2. DSH 本体のアプリ外枠（`#root` の固定高さ、`overflow:hidden` など）。DSH の index.html の viewport は
      `width=device-width, initial-scale=1` だけで、ズームを禁止していない（dsh-web-frontend 0.2.0-rc.2 の dist/index.html）。
 - **切り分け**: `cordis.patch.yml` からプラグインを外して再読込し、ピンチが効くかを試す。効けば仮説 1 になる。
-- **修正案**: `maximum-scale=1` をやめる。フォーカス時の自動ズームは、入力 16px 化のルールだけで防げる見込み。
-  修正後は KI-2 が顕在化するため、同時に扱う。
+- **対応（実機確認待ち）**: ADR-20261026-1450。`maximum-scale=1` をやめ、viewport meta は項目単位でマージする
+  （`width` / `initial-scale` / `viewport-fit` / `interactive-widget` だけを上書き・追加。`user-scalable` 等のズーム制限は足さない）。
+  フォーカス時の自動ズームは入力 16px 化のルールだけで防ぐ。KI-2 も同時に扱った。
+  2026-10-26 に DSH 0.2.0-rc.2 の配布物を確認し、`dsh-web-frontend` の CSS で `touch-action:none` が使われるのは dock の
+  分割線・タブ帯・リサイズつまみだけで、アプリ全体のピンチを止める指定は見当たらなかった（読解による。仮説 2 は未切り分け）。
+- **実機での確認項目**: ピンチ拡大・縮小ができるか。入力欄（チャット入力、モデル選択の検索欄）へのフォーカスで自動ズームしないか。
+  キーボード表示中にピンチしても `#root` が縮まず、等倍へ戻すと元の追従に戻るか。
+  効かないままなら、プラグインを外した状態との比較で仮説 2 を切り分ける。
 
 ## KI-10 キーボード表示中、モデル選択メニューが画面上端の外へ出る
 
@@ -119,3 +144,12 @@
   そのパン量だけ上へずれる。旧実装の `scrollTo(0,0)` は iOS のフォーカス時スクロールと競合した。また html/body に
   スクロールの余地が残っていた。
 - **対応**: ADR-20261024-0450（`#root` を fixed にして visual viewport へ追従させる）。2026-10-24 にオーナーが iPhone PWA で確認し、解決とした。
+
+## KI-11 FAB が会話のセッション名・右パネルのファイル名の先頭を隠す（issue #12）
+
+- **現象**: スマホ幅でドロワーが閉じているとき、左上の FAB（右端 = `safe-left + 46px`）が会話ヘッダのセッション名の先頭と、
+  右パネル（<768px で全画面）のタブ列・ファイル名の先頭に重なる。
+- **対応（実機確認待ち）**: ADR-20261026-1800。閉時の frame に DSH 自身の変数 `--dsh-frame-leading-clearance` を与え、会話ヘッダのタイトルを
+  FAB の右から始める（DSH 0.2.0-rc.2 の ui-conversation が参照する）。右パネル展開中は FAB を隠す（spec.md §4.5）。
+  右パネルからサイドバーへは、右パネルを閉じるボタンか左端からの右スワイプで畳んでから FAB を使う。
+- **残る制限**: 全画面ルート（Plugins / Schedules など）の見出しと FAB の重なりは扱っていない。DSH が変数の参照をやめると、重なる元の表示へ戻る。
