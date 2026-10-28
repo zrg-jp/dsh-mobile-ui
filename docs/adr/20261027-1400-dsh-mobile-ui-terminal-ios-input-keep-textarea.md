@@ -1,7 +1,7 @@
 # ADR-20261027-1400: iOS のターミナル入力は textarea の値に触れず、229 の keydown を xterm に見せずに、編集の差分を送る
 
 - Date: 2026-10-27
-- Status: proposed
+- Status: accepted（2026-10-29 iPhone PWA 実機で Gboard・標準キーボードとも確認）
 - Level: 3
 - Deciders: AI（DSH の Claude 系サブエージェント）。実機確認後にオーナーが accepted にする
 - Task: T311 / KI-12

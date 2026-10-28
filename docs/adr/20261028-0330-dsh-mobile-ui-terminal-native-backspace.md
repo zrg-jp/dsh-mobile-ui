@@ -1,7 +1,7 @@
 # ADR-20261028-0330: iOS のターミナルで、消す文字がある Backspace を xterm に見せず、UA のネイティブな削除にする
 
 - Date: 2026-10-28
-- Status: proposed
+- Status: accepted（2026-10-29 iPhone PWA 実機で Gboard・標準キーボードとも確認）
 - Level: 3
 - Deciders: AI（DSH の Claude 系サブエージェント）。実機確認後にオーナーが accepted にする
 - Task: T311 / KI-12

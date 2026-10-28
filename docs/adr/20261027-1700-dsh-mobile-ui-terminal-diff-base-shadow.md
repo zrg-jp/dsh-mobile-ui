@@ -1,7 +1,7 @@
 # ADR-20261027-1700: iOS のターミナル入力の差分の起点を「送信済みの影」にする
 
 - Date: 2026-10-27
-- Status: proposed
+- Status: accepted（2026-10-29 iPhone PWA 実機で Gboard・標準キーボードとも確認）
 - Level: 3
 - Deciders: AI（DSH の Claude 系サブエージェント）。実機確認後にオーナーが accepted にする
 - Task: T311 / KI-12
