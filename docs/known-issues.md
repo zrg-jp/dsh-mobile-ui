@@ -1,6 +1,6 @@
 # 既知の問題
 
-対象: `lib/client.js`（ブランチ `chore/dev-infra` 時点）、`@deepseek-ai/dsh-web-app` 0.2.0-rc.2。
+対象: `lib/client.js`（ブランチ `fix/ki-8-pinch-zoom` 時点）、`@deepseek-ai/dsh-web-app` 0.2.0-rc.2。
 各項目は GitHub issue（#1〜#8、#11）に転記済み。進捗と議論は issue で扱い、確定した仕様の変更は spec.md に反映する。
 特記のない限り、コードと DSH 配布物を読んで導いた推定であり、実機では観測していない。
 
@@ -10,14 +10,14 @@
 | ID | 概要 | 影響範囲 | 状態 |
 |---|---|---|---|
 | KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#1](https://github.com/HARU-pc/dsh-mobile-ui/issues/1)） |
-| KI-2 | ピンチズームで `#root` の高さが縮む | KI-8 次第 | 保留（[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
+| KI-2 | ピンチズームで `#root` の高さが縮む | iPhone PWA（KI-8 の修正で顕在化） | 対応済み・実機確認待ち（ADR-20261026-1450、[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
 | KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
 | KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/HARU-pc/dsh-mobile-ui/issues/4)） |
 | KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
 | KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 記録のみ（[#6](https://github.com/HARU-pc/dsh-mobile-ui/issues/6)） |
 | KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#7](https://github.com/HARU-pc/dsh-mobile-ui/issues/7)） |
 | KI-9 | 入力欄をタップすると、入力欄が画面の上へ外れていく | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-0450、2026-10-24 に実機で確認） |
-| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 未着手（[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
+| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
 | KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/HARU-pc/dsh-mobile-ui/issues/11)） |
 
 ## KI-1 Escape で閉じた後、フォーカスが FAB に戻らない（旧 Q1）
@@ -37,8 +37,12 @@
 
 - **現象（推定）**: `visualViewport.resize` は scale を区別せず、`--dsh-mobile-vvh` に `visualViewport.height` を入れる。
   倍率 2 なら、レイアウト座標上の `#root` の高さは半分になる。
-- **状態**: KI-8（そもそもピンチが効かない）を直すまでは発生しない。KI-8 を直すときに同時に扱う。
-- **修正案**: `vv.scale` が 1 から十分に離れている間は更新しない。またはキーボードによる縮みだけを反映する。
+- **状態**: 対応済み・実機確認待ち。KI-8 と同時に扱った。
+- **対応**: ADR-20261026-1450。`|visualViewport.scale − 1| > 0.01` の間は `--dsh-mobile-vvh` / `--dsh-mobile-vvtop` も
+  `window` への `resize` 再送も更新せず、等倍へ戻った後の最初のイベントで追従し直す（spec.md §6 `PinchFreezesRoot`）。
+  あわせて、拡大中の単指パンがスワイプとして誤発火しないよう、開始時・終了時にズーム中ならスワイプにしない（spec.md §5 `NoSwipeWhileZoomed`）。
+- **残る制限（推定）**: ズーム中にキーボードが出入りしても `#root` は直前の高さ・上端のまま。拡大したまま入力欄へフォーカスすると
+  iOS のパンに追従しない。ピンチ終了時に等倍のイベントが来なければ、次のイベントまで古い値が残る。
 
 ## KI-3 reduced-motion 設定でも閉じるアニメーションが残る（旧 Q6）
 
@@ -105,8 +109,14 @@
   2. DSH 本体のアプリ外枠（`#root` の固定高さ、`overflow:hidden` など）。DSH の index.html の viewport は
      `width=device-width, initial-scale=1` だけで、ズームを禁止していない（dsh-web-frontend 0.2.0-rc.2 の dist/index.html）。
 - **切り分け**: `cordis.patch.yml` からプラグインを外して再読込し、ピンチが効くかを試す。効けば仮説 1 になる。
-- **修正案**: `maximum-scale=1` をやめる。フォーカス時の自動ズームは、入力 16px 化のルールだけで防げる見込み。
-  修正後は KI-2 が顕在化するため、同時に扱う。
+- **対応（実機確認待ち）**: ADR-20261026-1450。`maximum-scale=1` をやめ、viewport meta は項目単位でマージする
+  （`width` / `initial-scale` / `viewport-fit` / `interactive-widget` だけを上書き・追加。`user-scalable` 等のズーム制限は足さない）。
+  フォーカス時の自動ズームは入力 16px 化のルールだけで防ぐ。KI-2 も同時に扱った。
+  2026-10-26 に DSH 0.2.0-rc.2 の配布物を確認し、`dsh-web-frontend` の CSS で `touch-action:none` が使われるのは dock の
+  分割線・タブ帯・リサイズつまみだけで、アプリ全体のピンチを止める指定は見当たらなかった（読解による。仮説 2 は未切り分け）。
+- **実機での確認項目**: ピンチ拡大・縮小ができるか。入力欄（チャット入力、モデル選択の検索欄）へのフォーカスで自動ズームしないか。
+  キーボード表示中にピンチしても `#root` が縮まず、等倍へ戻すと元の追従に戻るか。
+  効かないままなら、プラグインを外した状態との比較で仮説 2 を切り分ける。
 
 ## KI-10 キーボード表示中、モデル選択メニューが画面上端の外へ出る
 

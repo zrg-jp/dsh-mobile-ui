@@ -315,9 +315,76 @@ test("[§5.2 行4/8] 横スクロール祖先: 左端なら右スワイプ可、
 test("[§6] viewport meta を書換え、dispose で元に戻す", async () => {
 	const h = mount();
 	const meta = h.document.querySelector("meta[name=viewport]");
-	assert.match(meta.getAttribute("content"), /viewport-fit=cover/);
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content");
 	h.dispose();
 	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1");
+	h.close();
+});
+
+test("[§6 PinchAllowed] viewport meta にズームを制限する項目を足さない（KI-8）", async () => {
+	const h = mount();
+	const content = h.document.querySelector("meta[name=viewport]").getAttribute("content");
+	assert.doesNotMatch(content, /maximum-scale/);
+	assert.doesNotMatch(content, /user-scalable/);
+	assert.doesNotMatch(content, /minimum-scale/);
+	h.close();
+});
+
+test("[§6 ViewportMerge] 既存の項目は順序ごと保ち、必要な項目だけ上書き・追加する", async () => {
+	// ページ側の未知の項目（height など）と、重複・空白・大文字の混在を含む content。
+	const h = mount({ viewport: " Width=980 ,height=device-height,,initial-scale=2, initial-scale=3, minimum-scale=0.5" });
+	const meta = h.document.querySelector("meta[name=viewport]");
+	assert.equal(
+		meta.getAttribute("content"),
+		"width=device-width, height=device-height, initial-scale=1, minimum-scale=0.5, viewport-fit=cover, interactive-widget=resizes-content"
+	);
+	h.dispose();
+	// 他者が触っていなければ、元の文字列をそのまま戻す（正規化した形にしない）。
+	assert.equal(meta.getAttribute("content"), " Width=980 ,height=device-height,,initial-scale=2, initial-scale=3, minimum-scale=0.5");
+	h.close();
+});
+
+test("[§6 ViewportMerge] セミコロン区切り・混在区切りでも非管理項目を保つ", async () => {
+	const h = mount({ viewport: "width=980; height=device-height; user-scalable=yes, foo=1" });
+	const meta = h.document.querySelector("meta[name=viewport]");
+	assert.equal(
+		meta.getAttribute("content"),
+		"width=device-width, height=device-height, user-scalable=yes, foo=1, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+	);
+	// 他者変更後の dispose でも非管理項目は残る。
+	meta.setAttribute("content", `${meta.getAttribute("content")}; bar=2`);
+	h.dispose();
+	assert.equal(meta.getAttribute("content"), "width=980, height=device-height, user-scalable=yes, foo=1, bar=2");
+	h.close();
+});
+
+test("[§6 ViewportMerge] 他者が値を変えた・重複させた管理項目は dispose で触らない", async () => {
+	const h = mount();
+	const meta = h.document.querySelector("meta[name=viewport]");
+	meta.setAttribute("content", "width=device-width, initial-scale=2, viewport-fit=cover, viewport-fit=cover, interactive-widget=resizes-content");
+	h.dispose();
+	// initial-scale は他者の値、viewport-fit は重複（誰が書いたか判別できない）なので残す。interactive-widget は元に無いので消す。
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=2, viewport-fit=cover, viewport-fit=cover");
+	h.close();
+});
+
+test("[§6 ViewportMerge] content 属性が無ければ必要な項目だけで作り、dispose で属性ごと消す", async () => {
+	const h = mount({ viewport: null });
+	const meta = h.document.querySelector("meta[name=viewport]");
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content");
+	h.dispose();
+	assert.equal(meta.hasAttribute("content"), false);
+	h.close();
+});
+
+test("[§6 ViewportMerge] 起動後に他者が meta を変えていたら、dispose は本プラグインの項目だけを戻す", async () => {
+	const h = mount({ viewport: "width=device-width, initial-scale=1, viewport-fit=auto" });
+	const meta = h.document.querySelector("meta[name=viewport]");
+	// 別の介入者（DSH 本体や他プラグイン）が後から項目を足した状態。
+	meta.setAttribute("content", `${meta.getAttribute("content")}, theme-x=1`);
+	h.dispose();
+	// width / initial-scale は元の値、viewport-fit は元の auto、追加した interactive-widget は消え、theme-x は残る。
+	assert.equal(meta.getAttribute("content"), "width=device-width, initial-scale=1, viewport-fit=auto, theme-x=1");
 	h.close();
 });
 
@@ -393,6 +460,92 @@ test("[§6] 可視範囲が変わったら window の resize を再送する（K
 		assert.equal(el.hasAttribute("data-dsh-mobile-overlay"), false, JSON.stringify(opt));
 		t.close();
 	}
+});
+
+test("[§6 PinchFreezesRoot] ピンチズーム中（scale≠1）は CSS 変数も resize の再送も更新しない（KI-2）", async () => {
+	const h = mount();
+	const style = h.document.documentElement.style;
+	// キーボード表示（scale=1）: 通常どおり追従する。
+	h.visualViewport.height = 500;
+	h.visualViewport.offsetTop = 290;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "500px");
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvtop"), "290px");
+	assert.equal(h.resizeCount(), 1);
+	// キーボード表示中にピンチで 2 倍: visual viewport は半分の高さになりパンするが、#root は据え置く。
+	h.visualViewport.scale = 2;
+	h.visualViewport.height = 250;
+	h.visualViewport.offsetTop = 400;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	h.visualViewport.dispatchEvent(new h.window.Event("scroll"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "500px");
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvtop"), "290px");
+	assert.equal(h.resizeCount(), 1, "ズーム中の変化では DSH の再配置を促さない");
+	// 拡大中にキーボードを閉じても据え置く（scale=1 に戻ったときに反映する）。
+	h.visualViewport.height = 400;
+	h.visualViewport.offsetTop = 0;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "500px");
+	// 等倍へ戻ると、その時点の値で追従を再開し、変化を通知する。
+	h.visualViewport.scale = 1;
+	h.visualViewport.height = 800;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "800px");
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvtop"), "0px");
+	assert.equal(h.resizeCount(), 2);
+	h.close();
+});
+
+test("[§6 PinchFreezesRoot] 等倍とみなす許容幅（|scale−1| ≤ 0.01）の内側では追従し、外側では止める", async () => {
+	const h = mount();
+	const style = h.document.documentElement.style;
+	h.visualViewport.scale = 1.009;
+	h.visualViewport.height = 600;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "600px");
+	h.visualViewport.scale = 1.02;
+	h.visualViewport.height = 590;
+	h.visualViewport.dispatchEvent(new h.window.Event("resize"));
+	assert.equal(style.getPropertyValue("--dsh-mobile-vvh"), "600px");
+	h.close();
+	// 起動時点で拡大中なら変数を設定しない（CSS のフォールバック: 上端 0・高さ 100%）。
+	const z = mount({ scale: 2 });
+	assert.equal(z.document.documentElement.style.getPropertyValue("--dsh-mobile-vvh"), "");
+	z.close();
+});
+
+test("[§5.1 NoSwipeWhileZoomed] ピンチ拡大中の単指パンはスワイプにしない", async () => {
+	const h = mount();
+	h.visualViewport.scale = 2;
+	// 閉 → 右パン: 開かない。
+	swipe(h, h.el("msg"), [10, 300], [200, 300]);
+	// 右パネル展開中の左端起点の右パン: 畳まない。
+	h.setRightExpanded(true);
+	swipe(h, h.el("msg"), [0, 300], [200, 300]);
+	assert.deepEqual(h.calls, { toggleSidebar: 0, toggleExpanded: 0 });
+	h.setRightExpanded(false);
+	// 開 → 左パン: 閉じない。
+	await open(h);
+	swipe(h, h.el("msg"), [300, 300], [100, 300]);
+	assert.equal(h.calls.toggleSidebar, 1);
+	// 等倍で始め、終了時に拡大していたら（ピンチへ移行）破棄する。
+	h.visualViewport.scale = 1;
+	const t = (x) => new h.window.Touch({ identifier: 1, target: h.el("msg"), clientX: x, clientY: 300 });
+	h.el("msg").dispatchEvent(new h.window.TouchEvent("touchstart", { bubbles: true, touches: [t(300)], changedTouches: [t(300)] }));
+	h.visualViewport.scale = 1.5;
+	h.el("msg").dispatchEvent(new h.window.TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [t(100)] }));
+	assert.equal(h.calls.toggleSidebar, 1);
+	// 拡大中に始まり、終了時には等倍へ戻っていた操作（ピンチアウトの終わり）も破棄する。
+	h.visualViewport.scale = 2;
+	h.el("msg").dispatchEvent(new h.window.TouchEvent("touchstart", { bubbles: true, touches: [t(300)], changedTouches: [t(300)] }));
+	h.visualViewport.scale = 1;
+	h.el("msg").dispatchEvent(new h.window.TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [t(100)] }));
+	assert.equal(h.calls.toggleSidebar, 1);
+	// 等倍へ戻れば従来どおり（左スワイプで閉じる）。
+	h.visualViewport.scale = 1;
+	swipe(h, h.el("msg"), [300, 300], [100, 300]);
+	assert.equal(h.calls.toggleSidebar, 2);
+	h.close();
 });
 
 test("[§6] body 直下の固定オーバーレイに座標補正の印を付ける（KI-10）", async () => {

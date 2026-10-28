@@ -24,11 +24,13 @@ const FRAME_HTML = `<div id="root"><div id="frame" data-sidebar-collapsed>
  * @param {boolean} [opt.withFrame=true] AppFrame を描画するか
  * @param {boolean} [opt.reducedMotion=false] prefers-reduced-motion:reduce を CSS の media で一致させるか
  */
-export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false } = {}) {
+export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false, viewport = "width=device-width, initial-scale=1", scale = 1 } = {}) {
 	// prefers-reduced-motion は happy-dom の device 設定で CSS のカスケードに反映される（20.14.6 で確認）。
 	const window = new Window({ width, height, url: "http://localhost/", settings: { device: { prefersReducedMotion: reducedMotion ? "reduce" : "no-preference" } } });
 	const document = window.document;
-	document.write(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${withFrame ? FRAME_HTML : '<div id="root"></div>'}</body></html>`);
+	// viewport: 起動前の meta content（既定は DSH 0.2.0-rc.2 の dist/index.html と同じ値）。null なら content 属性なし。
+	const metaAttr = viewport === null ? "" : ` content="${viewport}"`;
+	document.write(`<!doctype html><html><head><meta name="viewport"${metaAttr}></head><body>${withFrame ? FRAME_HTML : '<div id="root"></div>'}</body></html>`);
 
 	// happy-dom の matchMedia は pointer 特性を評価しないため、幅と coarse を明示的に解く置換を入れる。
 	const media = new Map();
@@ -62,7 +64,8 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 
 	// visualViewport は happy-dom に無いので、resize を発火できる簡易版を置く。
 	const vvTarget = new window.EventTarget();
-	const visualViewport = Object.assign(vvTarget, { height, offsetTop: 0 });
+	// scale はピンチズームの倍率（KI-2）。
+	const visualViewport = Object.assign(vvTarget, { height, offsetTop: 0, scale });
 	window.visualViewport = visualViewport;
 
 	// プラグイン適用前に window の resize を数える（KI-10: 起動時に送らないことの検査に要る）。
