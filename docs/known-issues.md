@@ -1,7 +1,7 @@
 # 既知の問題
 
-対象: `lib/client.js`（ブランチ `chore/dev-infra` 時点）、`@deepseek-ai/dsh-web-app` 0.2.0-rc.2。
-各項目は GitHub issue（#1〜#8、#11）に転記済み。進捗と議論は issue で扱い、確定した仕様の変更は spec.md に反映する。
+対象: `lib/client.js`（ブランチ `feat/chrome-terminal` 時点）、`@deepseek-ai/dsh-web-app` 0.2.0-rc.2。
+各項目は GitHub issue（#1〜#8、#11、#12）に転記済み。進捗と議論は issue で扱い、確定した仕様の変更は spec.md に反映する。
 特記のない限り、コードと DSH 配布物を読んで導いた推定であり、実機では観測していない。
 
 **モバイルへの影響の目安**: iPhone のソフトウェアキーボードには Escape キーが無い。そのため Escape 起点の問題（KI-1、KI-7）は、
@@ -9,17 +9,19 @@
 
 | ID | 概要 | 影響範囲 | 状態 |
 |---|---|---|---|
-| KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 未着手（[#1](https://github.com/HARU-pc/dsh-mobile-ui/issues/1)） |
-| KI-2 | ピンチズームで `#root` の高さが縮む | KI-8 次第 | 保留（[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
-| KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 未着手（[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
+| KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#1](https://github.com/HARU-pc/dsh-mobile-ui/issues/1)） |
+| KI-2 | ピンチズームで `#root` の高さが縮む | iPhone PWA（KI-8 の修正で顕在化） | 対応済み・実機確認待ち（ADR-20261026-1450、[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
+| KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
 | KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/HARU-pc/dsh-mobile-ui/issues/4)） |
-| KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 未着手（[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
+| KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
 | KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 記録のみ（[#6](https://github.com/HARU-pc/dsh-mobile-ui/issues/6)） |
-| KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 未着手（[#7](https://github.com/HARU-pc/dsh-mobile-ui/issues/7)） |
+| KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#7](https://github.com/HARU-pc/dsh-mobile-ui/issues/7)） |
 | KI-9 | 入力欄をタップすると、入力欄が画面の上へ外れていく | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-0450、2026-10-24 に実機で確認） |
-| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 未着手（[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
-| KI-11 | リモート接続で、変更したショートカットから「Open locally」が動く | 外付けキーボード＋割当て変更 | 記録のみ（[#19](https://github.com/zrg-jp/dsh-mobile-ui/issues/19)） |
+| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
 | KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/HARU-pc/dsh-mobile-ui/issues/11)） |
+| KI-11 | FAB が会話のセッション名・右パネルのファイル名の先頭を隠す | スマホ | 対応済み・実機確認待ち（ADR-20261026-1800、[#12](https://github.com/HARU-pc/dsh-mobile-ui/issues/12)） |
+| KI-12 | 右パネルのターミナルで、キーボードは出るのに文字が入らない（日本語は変換できない、変換で読みが残る） | iPhone PWA（実機で報告あり） | 解決（ADR-20261027-1400・1700・20261028-0330、2026-10-29 に実機で確認。Gboard・標準キーボード） |
+| KI-13 | リモート接続で、変更したショートカットから「Open locally」が動く | 外付けキーボード＋割当て変更 | 記録のみ（[#19](https://github.com/zrg-jp/dsh-mobile-ui/issues/19)） |
 
 ## KI-1 Escape で閉じた後、フォーカスが FAB に戻らない（旧 Q1）
 
@@ -29,21 +31,30 @@
   フォーカスの行き先は UA 次第になる。
 - **期待**: 閉じた後、フォーカスが FAB に移る。
 - **修正案**: `syncState()` を先に同期的に呼んでから `focus()` する。または `requestAnimationFrame` の後で focus する。
-- **テスト**: happy-dom は `display:none` の要素でも focus できてしまう可能性があるため、検査の方法を併せて検討する。
+- **テスト**: happy-dom は `display:none` の要素でも focus できてしまう（20.14.6 で確認）ため、focus を呼んだ時点の body 属性で検査する。
+- **対応**: Escape でフォーカスの予約（期限 1 秒）を置き、`syncState()` が閉を観測して body 属性と inert を更新した直後に `fab.focus()` する。
+  DSH 0.2.0-rc.2 の `toggleSidebar()` はストア（`narrowExpanded`）を反転するだけで、frame の属性は再描画後に変わるため、
+  「toggle 直後に同期 syncState → focus」だけでは足りない（直後の syncState は呼ぶが、この時点ではまだ開のまま）。
 
 ## KI-2 ピンチズームで `#root` の高さが縮む（旧 Q3）
 
 - **現象（推定）**: `visualViewport.resize` は scale を区別せず、`--dsh-mobile-vvh` に `visualViewport.height` を入れる。
   倍率 2 なら、レイアウト座標上の `#root` の高さは半分になる。
-- **状態**: KI-8（そもそもピンチが効かない）を直すまでは発生しない。KI-8 を直すときに同時に扱う。
-- **修正案**: `vv.scale` が 1 から十分に離れている間は更新しない。またはキーボードによる縮みだけを反映する。
+- **状態**: 対応済み・実機確認待ち。KI-8 と同時に扱った。
+- **対応**: ADR-20261026-1450。`|visualViewport.scale − 1| > 0.01` の間は `--dsh-mobile-vvh` / `--dsh-mobile-vvtop` も
+  `window` への `resize` 再送も更新せず、等倍へ戻った後の最初のイベントで追従し直す（spec.md §6 `PinchFreezesRoot`）。
+  あわせて、拡大中の単指パンがスワイプとして誤発火しないよう、開始時・終了時にズーム中ならスワイプにしない（spec.md §5 `NoSwipeWhileZoomed`）。
+- **残る制限（推定）**: ズーム中にキーボードが出入りしても `#root` は直前の高さ・上端のまま。拡大したまま入力欄へフォーカスすると
+  iOS のパンに追従しない。ピンチ終了時に等倍のイベントが来なければ、次のイベントまで古い値が残る。
 
 ## KI-3 reduced-motion 設定でも閉じるアニメーションが残る（旧 Q6）
 
 - **現象（CSS の読解による）**: 閉時のセレクタ `[data-sidebar-collapsed]:has(> [data-rightbar-col])>:first-child` の詳細度は (0,3,0) で、
   reduced-motion 側の `:has(> [data-rightbar-col])>:first-child` の (0,2,0) より高い。このため、閉じるときは `transition:transform .25s, visibility 0s .25s` が残る。
 - **修正案**: reduced-motion 側に、閉時のセレクタと同じ詳細度のルールを追加する。
-- **テスト**: happy-dom の CSS カスケードで、computed の `transition` を検査できるか確認する。
+- **テスト**: happy-dom 20.14.6 は `settings.device.prefersReducedMotion` を media と詳細度つきのカスケードに反映するため、
+  computed の `transition` で開閉の両方を検査する（修正前の版では閉で赤になることを確認）。実ブラウザの描画（アニメーションが実際に止まるか）は実機で確認する。
+- **対応**: reduced-motion の media に `[data-sidebar-collapsed]:has(> [data-rightbar-col])>:first-child{transition:none;}` を追加した。
 
 ## KI-4 iPad 横（≥1024px）ではスワイプが効かない（旧 Q4）
 
@@ -61,6 +72,10 @@
   背後の右パネルが展開中ならそれが畳まれ、そうでなければ背後のサイドバーが開く。
 - **修正案**: touchstart で起点が frame 外なら候補にしない（pointerdown と同じ境界にそろえる）。
   これは軽微な修正で、テストも書ける（`harness.mjs` に portal 要素を足す）。
+- **対応**: touchstart で、frame があり起点が frame 外なら候補にしない（spec §5.1 `SwipeOnlyInsideFrame`）。
+  判断: FAB（body 直下）は例外として候補に残す（FAB 上の右スワイプは「開く」と一致し、背後の誤操作ではないため）。
+  frame が無いとき（SafeDegrade）は境界が無いので掛けない（従来どおり）。テストは `harness.mjs` の `addPortal()`（role=dialog の全画面レイヤ）で行う。
+  残る制限: frame 内に描画される前面 UI（frame の子孫として描かれるポップオーバー等）は区別しない。
 
 ## KI-6 coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない（旧 Q9）
 
@@ -78,6 +93,11 @@
   ドロワーも閉じる。ただし Modal のリスナーが後に登録されて後に実行される場合は、`defaultPrevented` を見ても防げない。
 - **修正案**: `event.defaultPrevented` を確認する。あわせて、`[aria-modal=true]` が存在する間は Escape を無視する。
 - **影響**: 外付けキーボードのときだけ起きる。
+- **対応**: Escape のハンドラで `event.defaultPrevented` と `document.querySelector("[aria-modal=true]")` を確認し、どちらかなら何もしない（spec §4.3 `EscapeYieldsToForeground`）。
+  0.2.0-rc.2 の配布物で、Modal は `[role=dialog][aria-modal=true]` を描画し document の bubble で Escape を処理すること、
+  MenuSurface 系は capture 段階で `preventDefault` することを確認した。
+  残る制限: aria-modal を付けず、preventDefault もしない前面 UI とは引き続き同時に閉じうる。0.2.0-rc.2 では HoverCard の preview
+  （window の bubble 段階で処理）が該当する。Tooltip（openOnClick）は capture で `stopPropagation` するため対象外。
 
 ## KI-8 ピンチによる拡大縮小が効かない（旧 Q5）
 
@@ -92,8 +112,14 @@
   2. DSH 本体のアプリ外枠（`#root` の固定高さ、`overflow:hidden` など）。DSH の index.html の viewport は
      `width=device-width, initial-scale=1` だけで、ズームを禁止していない（dsh-web-frontend 0.2.0-rc.2 の dist/index.html）。
 - **切り分け**: `cordis.patch.yml` からプラグインを外して再読込し、ピンチが効くかを試す。効けば仮説 1 になる。
-- **修正案**: `maximum-scale=1` をやめる。フォーカス時の自動ズームは、入力 16px 化のルールだけで防げる見込み。
-  修正後は KI-2 が顕在化するため、同時に扱う。
+- **対応（実機確認待ち）**: ADR-20261026-1450。`maximum-scale=1` をやめ、viewport meta は項目単位でマージする
+  （`width` / `initial-scale` / `viewport-fit` / `interactive-widget` だけを上書き・追加。`user-scalable` 等のズーム制限は足さない）。
+  フォーカス時の自動ズームは入力 16px 化のルールだけで防ぐ。KI-2 も同時に扱った。
+  2026-10-26 に DSH 0.2.0-rc.2 の配布物を確認し、`dsh-web-frontend` の CSS で `touch-action:none` が使われるのは dock の
+  分割線・タブ帯・リサイズつまみだけで、アプリ全体のピンチを止める指定は見当たらなかった（読解による。仮説 2 は未切り分け）。
+- **実機での確認項目**: ピンチ拡大・縮小ができるか。入力欄（チャット入力、モデル選択の検索欄）へのフォーカスで自動ズームしないか。
+  キーボード表示中にピンチしても `#root` が縮まず、等倍へ戻すと元の追従に戻るか。
+  効かないままなら、プラグインを外した状態との比較で仮説 2 を切り分ける。
 
 ## KI-10 キーボード表示中、モデル選択メニューが画面上端の外へ出る
 
@@ -121,9 +147,74 @@
   スクロールの余地が残っていた。
 - **対応**: ADR-20261024-0450（`#root` を fixed にして visual viewport へ追従させる）。2026-10-24 にオーナーが iPhone PWA で確認し、解決とした。
 
-## KI-11 リモート接続で、変更したショートカットから「Open locally」が動く
+## KI-11 FAB が会話のセッション名・右パネルのファイル名の先頭を隠す（issue #12）
 
-- **現象（推定）**: spec §6.1 の遮断は、`workspace.openLocal` の Web 既定（⌘/Ctrl+Shift+O）だけを見る。
+- **現象**: スマホ幅でドロワーが閉じているとき、左上の FAB（右端 = `safe-left + 46px`）が会話ヘッダのセッション名の先頭と、
+  右パネル（<768px で全画面）のタブ列・ファイル名の先頭に重なる。
+- **対応（実機確認待ち）**: ADR-20261026-1800。閉時の frame に DSH 自身の変数 `--dsh-frame-leading-clearance` を与え、会話ヘッダのタイトルを
+  FAB の右から始める（DSH 0.2.0-rc.2 の ui-conversation が参照する）。右パネル展開中は FAB を隠す（spec.md §4.5）。
+  右パネルからサイドバーへは、右パネルを閉じるボタンか左端からの右スワイプで畳んでから FAB を使う。
+- **残る制限**: 全画面ルート（Plugins / Schedules など）の見出しと FAB の重なりは扱っていない。DSH が変数の参照をやめると、重なる元の表示へ戻る。
+
+## KI-12 右パネルのターミナルで、キーボードは出るのに文字が入らない（T311）
+
+- **観測**: オーナーが iPhone PWA の実機で報告した（2026-10-26）。T343 のタップ時フォーカスより前から起きていた。
+  2026-10-26 23:23 の追加報告: 読み取り専用ではない（タップでキーボードが出る）。キーボードは Gboard。Enter は入り、押すたびにプロンプトが進む。
+  英字はほぼ入らず、まれに `a` だけが入った。
+- **原因（コード・一次資料と happy-dom の再現による。実機のイベント記録は未取得）**:
+  1. iOS の WebKit は、キーボードの入力メソッドが処理したキーの keydown を keyCode 229 にする（WebKit `EventHandler.cpp` の `CompositionEventKeyCode = 229`）。
+     Gboard などのサードパーティキーボードは文字を `insertText` で入れるため、英字も keydown 229 → `beforeinput` / `input`（`insertText`、`composed:true`）→ keyup の列になる（推定。
+     同じ列は iOS の中国語 IME の空白・句読点で記録がある: xterm.js issue #5835）。
+  2. xterm 6.0.0 の `_inputEvent`（sidebar-terminal 0.2.0-rc.2 `client.terminal.js:532`）は、keydown から keyup まで（`_keyDownSeen`）に来た `composed` な input を捨てる。
+     UA の input は常に `composed` なので、この列の文字は xterm の CompositionHelper の差分検出（同 `:1291-1326`）にしか拾われない。
+  3. 差分検出は keydown のときの値を控え、`setTimeout(0)` の後の値と比べる。値の更新がこの timer より遅れると、比べた時点で値はまだ変わっておらず、文字が落ちる
+     （#5835 の記録では input が keydown より 7–10ms 遅れる。iOS の実際の timer との前後は未計測）。
+  4. Enter は keyCode 13 の keydown を xterm が自分で `\r` に変えて送るので通る（同 `:493-511`、`:5140` 付近の `evaluateKeyboardEvent`）。Backspace も同じ経路。
+  5. まれに `a` だけ入る理由（仮説、未検証）: (i) 入力が keydown の timer より先に値へ入った打鍵だけを差分検出が拾う（happy-dom で input の遅れを 0ms にすると届き、1ms 以上で落ちる）、
+     または (ii) その打鍵だけ keydown が keyCode 65 で来た（xterm は keyCode ≥ 48 の 1 文字を keydown で送る）。`a` に偏る理由は特定していない。
+- **対応（1 回目、f8e4bb0）**: ADR-20261027-0020。`COARSE` で、xterm が捨てる `insertText` の input を document の capture で止め、`composed` でない input として同じ data を送り直す。
+  送り直す前に textarea の値を `beforeinput` の時点へ戻し、差分検出との二重送信を避けた。
+- **追加の観測（2026-10-27 13:25、f8e4bb0、Gboard）**: 英字は入るようになった。日本語はひらがなが送られる（`echo` で「こんにちは」）が、かな→漢字の変換ができない。
+  （zsh の行編集でマルチバイトが `<0081><0093>` 等と出るのは、稼働中の DSH プロセスに LANG / LC_* が無く PTY の zsh が C ロケールで動くため。別件で、本項の対象外。）
+- **原因（2 回目。コード・一次資料・合成列による。実機のイベント記録は未取得）**: f8e4bb0 の値の巻き戻しで、キーボードが入れたかなは textarea から即座に消える。
+  iOS のサードパーティキーボードは文書を `UITextDocumentProxy` のカーソル前の文脈でしか見ず、Gboard などは marked text をほぼ使わない（推定。出典は ADR-20261027-1400）。
+  候補を選ぶとき、キーボードはカーソル前の読みを消して漢字を入れるが、消す読みが textarea に無いので変換できない（推定）。
+- **対応（2 回目）**: ADR-20261027-1400（spec.md §5.3 `TerminalInputReachesOnce`）。textarea の値に触れない。keyCode 229 の keydown を xterm に見せず（差分検出を起こさせない）、
+  編集の input（挿入・置換・後方削除）を `beforeinput` の時点の値との差（DEL × 消えた数 ＋ 入った文字）として送る。変換中・確定の送信待ちは xterm の CompositionHelper に任せる。
+  xterm が keydown で送る Backspace（keyCode 8。キーリピートを含む）は、送った数だけ textarea からも消して端末の行とそろえる。
+- **追加の観測（2026-10-27 16:36、4a07c17、UTF-8 ロケールの zsh、Gboard）**: 英字・かな・Enter は入り、文字化けも解消した。
+  「echo ご」→「きげん」→「機嫌」へ変換 →「麗しゅう」と打つと、端末の行は `echo ごきげ機嫌麗しゅう` になった。読み 3 文字のうち 1 文字しか消えていない。
+  `echo hell.こんにちは` も入った（打鍵の意図は未確認）。
+- **原因（3 回目。合成列による再現。実機のイベント記録は未取得）**: 4a07c17 は、差分を直前の `beforeinput` の時点の値から取る。
+  後方削除の `beforeinput` と `input` が 1 対 1 に並ばない列では、消した数を数え落とす。該当するのは、2 回目以降の削除に `beforeinput` が無い列と、`beforeinput` が先にまとめて来る列。
+  happy-dom と xterm 6.0.0 で 13 種の列を流したところ、観測と一致したのはこの 2 列だけだった（表は ADR-20261027-1700）。
+  WebKit の TypingCommand は、続く後方削除を開いたままのコマンドに足し、`input` を scoped queue に積む。このため、この並びは起こりうる（推定）。
+  「hell.」は、1 文字消して「.」を入れる列ならどの列でも同じになるので、列の特定には使えない。
+- **対応（3 回目）**: ADR-20261027-1700。差分の起点を「送信済みの影」にした。影は、本プラグインが直前に送った時点、または Backspace を写した時点の textarea の値。
+  影が無いときは、従来どおり `beforeinput` の時点の値を起点にする。xterm が値を変える場面や、xterm 自身が送る場面では影を捨てる。
+- **追加の観測（2026-10-28、be2a06b と同じ入力処理の検証ブランチ 3ee01c8、iPhone iOS 18.7・PWA・Gboard）**: 「ごきげん」と打って候補「ご機嫌」を選ぶと、textarea は「ごき機嫌」、端末の行は「ごきげ機嫌」になった。
+  アプリ内ロガーでイベント列を記録した（抜粋は `test/fixtures/20261028-gboard-gokigen.json`）。
+- **原因（4 回目。実機の記録と、その再生による）**: Gboard は濁点の付け替え（こ→ご）にも、変換で読みを消すときにも後方削除を使う。連続する削除のうち 1 回目だけが keyCode 8 の keydown になり、
+  xterm がそれを DEL にして `preventDefault` するので、UA はその 1 文字を消さない。濁点では、本プラグインの Backspace の写しが keyup で消すので合っていた。
+  変換では、Gboard は 3 回消した（keydown 8 の 1 回目と、keydown 無しのネイティブ削除 2 回）。1 回目は xterm が DEL を送ったが textarea からは消えず、写しも「UA が値を変えた」ので消さなかった（textarea「ごき機嫌」）。
+  2・3 回目のネイティブ削除は、直前の keydown 8 が `defaultPrevented` なので「keydown で送り済み」として送らなかった（端末「ごきげ機嫌」）。
+  Gboard の内部状態のずれを仮定しなくても、両方の値は説明できる（再生の値の推移が、記録と全イベントで一致する）。
+- **対応（4 回目）**: ADR-20261028-0330。`COARSE` で、消す文字がある修飾キーなしの keyCode 8 の keydown を xterm に見せず（`preventDefault` しない）、UA にネイティブに消させる。
+  その `deleteContentBackward` を差分の経路（送信済みの影）が DEL として送る。Backspace の写しは、確定の送信待ちを解く Backspace だけに残る。
+- **テスト**: `test/terminal-input.test.mjs`（npm の `@xterm/xterm@6.0.0` を happy-dom で動かす。57 件、うち DSH 同梱版との照合 1 件は配布物が無ければ skip、実機の再生モデルの確認 1 件は修正後の版では skip）。
+  4 回目の対応で 6 件を足した（実機の列の再生、再生モデルの確認、xterm に任せる Backspace の境界、beforeinput の無いネイティブ削除、送信待ちを解いた後のリピート 2 件）。keyCode 8 を UA の既定動作なしで流していた既存の 5 件は、ネイティブ削除を再現する形に直した。
+  日本語の変換の合成列 3 件（Gboard 型 2・標準キーボード型 1）は d686e25・f8e4bb0 のどちらでも赤。ADR-20261027-1400 の変異 17 種はすべて赤。
+  3 回目の対応で 13 件を足した（後方削除の並びの 4 列、Backspace の写しの後、影を捨てる場面、変換の後、編集外の変化、レビューの反例 5 件）。そのうち 7 件は 4a07c17 で赤になる。影の変異 15 種はすべて赤（ほかに、防御の処理を外す 2 種が緑のまま。ADR-20261027-1700）。
+- **残る制限**: Gboard の内部状態（UITextDocumentProxy・未確定範囲）は再現できない。修正後も Gboard が同じ数を消すかは実機で確かめる。iOS 標準キーボードの列は記録が無い。
+  ほかの iOS の列は合成で、時刻・順序の全部は再現しない。Gboard の英字・かな・変換の列は推定（実機のイベント記録が無い）。変換の削除が「後方削除の繰り返し」か「選択して置換」か、また `beforeinput` と `input` がどう並ぶかも未確認（ADR-20261027-1700 の表の列はどれも扱う。marked text で読みを選択して置換する列だけは扱えない）。
+  端末の行のカーソルは textarea のカーソル（末尾）に対応するとみなすため、textarea 内でカーソルを動かした編集（スペースキー長押しのカーソル移動など）は端末とずれる。
+  textarea の値は Enter・blur まで伸びる。確定の送信待ちの解除は timer の順序による近似。予測候補の単語挿入・自動修正・音声入力・ハードウェアキーボード付き iPad は未検証。
+  xterm を版上げして `_inputEvent` が直った（PR #5614 相当）場合は、プラグイン無しの再現テストが赤になるので、介入を外すか見直す。
+- **実機の確認手順**: spec.md §8 の 2。切り分け用のスニペット `tmp/terminal-input-probe.js`（worktree `fix/terminal-ios-input` の tmp/、commit しない）は、直らなかったときのイベント記録に使う。
+
+## KI-13 リモート接続で、変更したショートカットから「Open locally」が動く
+
+- **現象（推定）**: spec §6.3 の遮断は、`workspace.openLocal` の Web 既定（⌘/Ctrl+Shift+O）だけを見る。
   利用者が設定で割当てを変えると遮断されず、ホストのアプリが起動しうる（手元では何も見えない）。
 - **影響**: 外付けキーボードを使い、かつ割当てを変えた場合だけ。害はホストで余計なアプリが開くことにとどまる。
 - **修正案**: DSH のショートカット登録をプラグインから上書きする公開 API が無いため、現状は記録のみとする。
