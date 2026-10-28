@@ -302,3 +302,57 @@ test("[§7] dispose でターミナルのリスナーも外す", async () => {
 	assert.notEqual(h.document.activeElement, h.el("xinput"));
 	h.close();
 });
+
+test("[§5.3 TerminalInputUntouched] ターミナルの helper textarea のキー・変換イベントには介入しない。例外は keyCode 229 の keydown と、input の送り直しだけ（T311）", async () => {
+	// xterm 6.0.0 の入力経路（keydown / keypress / input / composition*。sidebar-terminal 0.2.0-rc.2 の client.terminal.js:310）
+	// が本プラグインの document capture リスナー（T344 の Enter、T310 の focusin ガード等）で止められないことを検査する。
+	// xterm 本体の処理（onData に届くか）は tmp/repro で同梱版を動かして確認した（spec §5.3）。
+	const h = mount({ terminal: true });
+	const realNow = Date.now;
+	try {
+	// iOS Safari と同じく InputEvent に getTargetRanges を持たせる（無いと T344 の Enter 処理が最初に抜け、検査にならない）。
+	h.window.InputEvent = class extends h.window.InputEvent { getTargetRanges() { return []; } };
+	const input = h.el("xinput");
+	drag(h, h.el("xrows"), [[100, 100]]);
+	assert.equal(h.document.activeElement, input);
+	const reached = [];
+	const types = ["keydown", "keypress", "keyup", "beforeinput", "input", "compositionstart", "compositionupdate", "compositionend"];
+	// window の bubble 段階で記録する。document の capture・bubble（本プラグインが付ける段階）の後なので、
+	// どこかで伝播を止めれば届かず、preventDefault すれば defaultPrevented が立つ（独立レビューの指摘）。
+	// input は composed も記録する。COARSE の insertText は §5.3 TerminalInputReachesOnce により、元の（composed:true の）input を止め、
+	// composed:false の input を送り直す（xterm 本体を使った検査は test/terminal-input.test.mjs）。
+	// keyCode 229 の keydown は、同じ節により xterm に見せない（伝播を止める。preventDefault はしない）。
+	const onWindow = (e) => { if (e.target === input) reached.push(`${e.type}:${e.defaultPrevented}${e.type === "input" ? `:composed=${e.composed}` : ""}`); };
+	for (const type of types) h.window.addEventListener(type, onWindow);
+	const W = h.window;
+	const fire = (e) => input.dispatchEvent(e);
+	const key = (type, init, keyCode) => {
+		const e = new W.KeyboardEvent(type, { bubbles: true, cancelable: true, ...init });
+		if (keyCode !== undefined) Object.defineProperty(e, "keyCode", { get: () => keyCode });
+		return e;
+	};
+	// 修飾なしの Enter（T344 が composer で奪う形）、iOS の keyCode 229 / Unidentified、通常の文字。
+	fire(key("keydown", { key: "Enter" }, 13));
+	fire(key("keydown", { key: "Unidentified" }, 229));
+	fire(key("keypress", { key: "a" }, 97));
+	fire(key("keyup", { key: "a" }, 65));
+	fire(new W.InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertText", data: "a" }));
+	// 実物の input / composition* は cancelable ではないが、preventDefault の呼出しを検出するため cancelable にする。
+	input.value += "a";
+	fire(new W.InputEvent("input", { bubbles: true, cancelable: true, composed: true, inputType: "insertText", data: "a" }));
+	fire(new W.CompositionEvent("compositionstart", { bubbles: true, cancelable: true }));
+	fire(new W.CompositionEvent("compositionupdate", { bubbles: true, cancelable: true, data: "か" }));
+	fire(new W.CompositionEvent("compositionend", { bubbles: true, cancelable: true, data: "か" }));
+	assert.deepEqual(reached, ["keydown:false", "keypress:false", "keyup:false", "beforeinput:false", "input:false:composed=false", "compositionstart:false", "compositionupdate:false", "compositionend:false"]);
+	// T310 の focusin ガードは composer 限定。ユーザー操作の期限（1.5 秒）外のフォーカスでもターミナルからは外さない。
+	const later = realNow() + 60_000;
+	Date.now = () => later;
+	input.blur();
+	input.focus();
+	await h.flush();
+	assert.equal(h.document.activeElement, input, "focusin ガードが helper textarea を外さない");
+	} finally {
+		Date.now = realNow;
+		h.close();
+	}
+});

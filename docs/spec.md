@@ -56,7 +56,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | `--dsh-frame-leading-clearance`（frame から継承される CSS 変数） | ui-layout が darwin の閉時の frame に定め（160px / 84px）、ui-conversation の会話ヘッダ titleRow が `padding-inline-start: max(0px, calc(var(--dsh-frame-leading-clearance,0px) - 20px))` で参照する（conversation `lib/client.js` 15797） | 会話タイトルを FAB から離す（§4.5） |
 | `data-sidebar-right-open`（展開時だけ付く）と、セッション切替で変わる `hidden` | ui-sidebar-right `SidebarPanel` / `SessionView` | 右パネル展開の再判定の契機（判定自体は `isExpanded()`。§4.5） |
 | `section[data-sidebar-terminal]` | ui-sidebar-terminal（`client.terminal.js` 13288, 13334） | ターミナルの特定（§5.3） |
-| xterm.js 6.0.0 の公開 DOM クラス `.xterm` / `.xterm-helper-textarea` / `.xterm-scrollable-element`、helper textarea の `readOnly`（`disableStdin`）、ピクセル単位の `wheel` でスクロールすること | ui-sidebar-terminal が同梱する xterm（ハッシュ化されないサードパーティのクラス。版の更新で変わりうる） | タップで focus、合成 wheel（§5.3） |
+| xterm.js 6.0.0 の公開 DOM クラス `.xterm` / `.xterm-helper-textarea` / `.xterm-scrollable-element`、helper textarea の `readOnly`（`disableStdin`）、ピクセル単位の `wheel` でスクロールすること、`composed` でない `insertText` の `input` を keydown の有無に依らず送ること（`_inputEvent`、`client.terminal.js:532`） | ui-sidebar-terminal が同梱する xterm（ハッシュ化されないサードパーティのクラス。版の更新で変わりうる） | タップで focus、合成 wheel、iOS の文字入力の送り直し（§5.3） |
 | `document.body` へ portal される固定オーバーレイ | ui-primitives `MenuSurface`、model-selection `ModelSelect`（`createPortal(..., document.body)`）、Modal、Toast（0.2.0-rc.2 で確認） | 座標系の補正対象（§6） |
 
 不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:426](../lib/client.js#L426)）。
@@ -180,7 +180,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 
 起点の要素は frame 内と FAB に限る（§5.1 `SwipeOnlyInsideFrame`。KI-5 で変更）。
 
-### 5.3 右パネルのターミナル（T311 / T343、ADR-20261026-1800、[client.js:620-734](../lib/client.js#L620-L734)）
+### 5.3 右パネルのターミナル（T311 / T343、ADR-20261026-1800・ADR-20261027-1400・ADR-20261027-1700・ADR-20261028-0330、[client.js:620-1020](../lib/client.js#L620-L1020)）
 対象は `[data-sidebar-terminal] .xterm` 内から始まるタッチ。document の capture 段階の passive な `touchstart` / `touchend` / `touchcancel` で追跡する。
 `touchmove` だけは、初めて触れた `.xterm` 要素に non-passive で付ける（文書全体のスクロールは妨げない。DOM から外れた要素からは次の touchstart（文書のどこでも）で外し、dispose で全部外す）。
 
@@ -195,6 +195,63 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
   その `touchend` の中で `textarea.xterm-helper-textarea` に `focus({preventScroll:true})` を同期的に呼ぶ。
   textarea が無い、`readOnly`（DSH が書込権限の無いときに付ける `disableStdin`）または `disabled` なら何もしない。
   すでにフォーカス済み（DSH の表示時 effect による focus で、キーボードが出ていない状態がありうる）なら、キーボード表示中（`visualViewport.height < innerHeight − 100`）は何もせず、それ以外は `blur()` してから focus し直す。
+- 不変条件 `TerminalInputUntouched`: helper textarea を対象とする `keypress` / `keyup` / `beforeinput` / `composition*` と、keyCode 229 以外の `keydown` は、
+  本プラグインのリスナーで `preventDefault` も伝播停止もしない（xterm 6.0.0 の入力経路。sidebar-terminal 0.2.0-rc.2 の `client.terminal.js:310`）。
+  例外は `TerminalInputReachesOnce` の 3 つ（`COARSE` の keyCode 229 の `keydown` の伝播停止、消す文字がある修飾キーなしの keyCode 8 の `keydown` の伝播停止、`input` の送り直し）だけ。
+  T344 の Enter 処理と T310 の focusin ガードは `[data-composer-input]` 内だけを対象にし、ターミナルには及ばない。
+  入力 16px の規則（§6）は helper textarea にも当たるが、xterm は textarea の font-size を入力の判定に使わない（同 `:289`、`:493-541`）。
+- 不変条件 `TerminalInputReachesOnce`（KI-12、ADR-20261027-1400・差分の起点は ADR-20261027-1700・Backspace は ADR-20261028-0330。ADR-20261027-0020 を置き換え）: `COARSE` で、`[data-sidebar-terminal] textarea.xterm-helper-textarea` について次のとおり扱う。
+  状態は textarea ごとに持つ（変換中にターミナルが作り直されても次へ持ち越さない）。readOnly / disabled のときは何もしない。
+  - 値を書き換えない: 本プラグインは textarea の値と選択範囲を変えない（例外は下の Backspace の写しだけで、確定の送信待ちを解く Backspace に限られる）。iOS のキーボード（特に marked text を使わない Gboard などのサードパーティ）は、
+    カーソル前の値を変換の文脈に使い、候補の選択で読みを消して漢字を入れる。値を消したり巻き戻したりすると変換できない（2026-10-27 の実機報告。ADR-20261027-0020 版の欠陥）。
+    値は xterm が Enter（CR）・Ctrl+C・blur・貼り付けで空にする（xterm 6.0.0 の挙動）。
+  - keyCode 229 の `keydown` は document の capture で `stopImmediatePropagation` し、xterm に見せない（`preventDefault` はしない。読み取り専用では止めない）。xterm は 229 では
+    差分検出（keydown の時点の値と `setTimeout(0)` 後の値の比較、同 `:1291-1326`）を予約し `_keyDownSeen` を立てる以外に何もしないので、文字はすべて次の `input` で送る。
+  - Backspace（ADR-20261028-0330）: 修飾キー（Ctrl・Alt・Meta）なしの keyCode 8 の `keydown` は、まだ `defaultPrevented` でなく、変換中でも確定の送信待ちでもなく、
+    先に控えた Backspace の写し（下）を済ませた後で消す文字がある（`selectionEnd > 0` または選択範囲がある）なら、document の capture で `stopImmediatePropagation` し、xterm に見せない（`preventDefault` はしない）。
+    UA がネイティブに消し、その `deleteContentBackward` の `input` を下の差分の経路が DEL として送る。キーリピート（keyup の前に keydown が続く）も 1 回ずつ同じ。
+    影と待ちの数はこの keydown では捨てない（xterm は値に触れず、何も送らない）。差分の起点の控えとして、この keydown の時点の値を `beforeinput` の時点の値の代わりに置く（`beforeinput` が来れば上書き）。
+    それ以外の Backspace（消す文字が無い・変換中・送信待ち・修飾キー付き・読み取り専用・既に取り消し済み）は、従来どおり xterm が `keydown` で送る。
+    根拠: 2026-10-28 の実機の記録（Gboard「ごきげん」→「ご機嫌」）で、Gboard は濁点の付け替えと変換の読みの削除に後方削除を使い、連続する削除の 1 回目だけが keyCode 8 の `keydown` になった。
+    xterm がそれを `preventDefault` すると、その 1 文字だけ textarea から消えず（変換では「ごき機嫌」）、続くネイティブ削除は「keydown で送り済み」として送られなかった（端末「ごきげ機嫌」）。
+  - 変換中（その textarea の `compositionstart` から `compositionend`）と確定の送信待ちは、xterm の CompositionHelper に任せる。
+    この間の `insertText` の `input` は止めるだけで送らない（`isComposing:false` で来ても。xterm が値から確定文字と一緒に送る）。それ以外の `input` は通す。
+    送信待ちは、`compositionend` から、その配送中に textarea へ足したリスナーが予約する 0ms timer まで（配送が途中で止まったときは次のタスクで解く）。
+    そのリスナーは同じ配送のうち xterm のリスナーの後に呼ばれるので、timer は xterm の確定 timer より後に走る。ただし間に他の timer が入れば、その間の文字は落ちうる（近似）。
+    待ちの間に 229・Shift・Ctrl・Alt・CapsLock 以外の keydown が来たら、xterm と同じく待ちを解く。古い確定の解除は新しい待ちを解かない（世代で区別）。
+  - それ以外で、`inputType` が `insertText` / `insertReplacementText` / `deleteContentBackward` / `deleteWordBackward` / `deleteSoftLineBackward` / `deleteHardLineBackward` の `input` は、
+    capture で `stopImmediatePropagation` し、起点の値と今の値の差を送る。差は、今のカーソル（`selectionEnd`）より後ろが前後で同じならそこを除き、
+    残りの共通の先頭を除いて「消えた部分のコードポイント数だけ DEL（0x7f）＋ 入った文字列（改行は CR）」とする（サロゲートペアは割らない）。
+    起点は「送信済みの影」（本プラグインが直前に差分を送った時点、または Backspace を写した時点の textarea の値）で、影が無ければ直前の `beforeinput`（またはネイティブに消させる Backspace の `keydown`）の時点の値（ADR-20261027-1700）。
+    影は、229 以外の keydown・`compositionstart`・blur・`paste`（観察だけで止めない）・対象外の `inputType` の `input` で捨てる（xterm が値を変える・自分で送る）。また、`input` を待っている `beforeinput` が無いときに
+    来た `beforeinput` の時点の値が影と違えば捨てる（値が編集の外で変わった）。待ちの数は、取り消された `beforeinput`（配送の後に window の bubble で `defaultPrevented` を見る）を数えず、
+    値が空での後方削除（下の DEL を送る場合）も数えない。229 以外の keydown・`compositionstart`・blur・`paste`（xterm が値を空にする）で 0 に戻す。229 と時間では戻さない
+    （削除の `beforeinput` と `input` の間に 229 が挟まる列や、`input` が別のタスクに遅れて来る列で、未送信の編集を編集外の変化と誤って DEL を落とすため）。
+    制限: 取り消されず `input` も来ない `beforeinput`（上の場合以外）があると、次の 229 以外の keydown などまで編集外の変化を見分けられない（その間に値をスクリプトが変えると、余分な DEL・再送が出うる）。こうして、`beforeinput` と `input` が 1 対 1 に並ばない列（後方削除の `beforeinput` が先にまとめて来る、
+    2 回目以降の削除に `beforeinput` が無い、`beforeinput` が 1 つも無い）でも、消えた数を数え落とさない。
+    影も `beforeinput` も無いときは、`insertText` の `data` だけを送り（消えた選択範囲は分からない）、それ以外は xterm に任せる。
+    送るときは、同じ文字列の `InputEvent("input", { bubbles: true, inputType: "insertText", data })`（`composed` なし）を同じ textarea へ送る。
+    xterm は `composed` でない `insertText` を keydown の有無に依らず onData に送る（`_inputEvent`、`client.terminal.js:532`。keypress で送り済みなら捨てる）。
+  - 直前の keydown（keyup・blur で失効）を xterm が `preventDefault` していて keyCode が 229 でないなら、その間の編集の `input` は送らない（xterm が keydown で送り済み。UA が preventDefault に従わず挿入も出した場合）。
+  - 値が空（カーソルが先頭）の textarea で `deleteContentBackward` の `beforeinput` が来たら DEL を 1 つ送る（Enter の後の Backspace。消す文字が無いと UA が `input` を出さないことがあるため。
+    xterm が keydown で送り済みなら送らない）。
+  - Backspace の写し: xterm に任せた Backspace について、xterm が keyCode 8 の keydown で DEL を送って `preventDefault` した数（キーリピートを含む）だけ、keyup または別の keydown の時点で
+    textarea のカーソル直前の文字（サロゲートペアは 2 単位で 1 文字）を消す。端末の行と textarea（変換の文脈）をそろえるため。
+    変換中・送信待ち・修飾キー付き・選択範囲がある・読み取り専用・UA も値を変えた（最初の keydown の時点と値が違う）ときは消さない。
+    ADR-20261028-0330 の後、写すのは確定の送信待ちを解いた Backspace（xterm が確定文字を送ってから DEL を送る）だけになる。ネイティブに消させる Backspace の keydown は、先に控えた写しを済ませる。
+    （xterm は送った keydown の伝播を止めるので、配送の後に `defaultPrevented` を見る。blur では写さずに捨てる。xterm が blur で値を空にするため。）
+  - 前方削除・貼り付け（xterm が `paste` で送る）・`insertCompositionText`・その他の `inputType` は介入しない。fine pointer（デスクトップ）では何もしない。
+  - 前提と制限: 端末の行のカーソルは textarea の末尾（カーソル位置）に対応するとみなす。textarea 内でカーソルを動かした編集は、端末の行とずれる（DEL の数・位置が合わない）。
+    xterm の 229 経路（差分検出）は使わない。textarea の値は Enter・blur まで伸び続ける（DSH の 1 行より長くなってもよい）。
+  - 保証の範囲: 合成したイベント列（`test/terminal-input.test.mjs`。iOS の列は xterm.js issue #5835 の記録、Gboard 型の変換として「後方削除の繰り返し → insertText」と
+    「読みの選択 → insertReplacementText」、`beforeinput` と `input` が 1 対 1 に並ばない後方削除の 4 列（2026-10-27 16:36 の実機「ごきげ機嫌」と一致する列を含む）、
+    標準キーボード型の marked text、レビューで挙げた反例）で、各文字・DEL が onData に 1 回届くこと。
+    実機の記録の再生（2026-10-28、Gboard「ごきげん」→「ご機嫌」、`test/fixtures/20261028-gboard-gokigen.json`）で、keyCode 8 の keydown が取り消されなければ UA がネイティブに 1 文字消す、
+    というモデルを加えて、textarea と端末の行が「ご機嫌」でそろうこと（同じモデルを be2a06b に当てると、記録の値の推移を全イベントで再現する）。
+    Gboard の内部状態（UITextDocumentProxy・未確定範囲）は再現できない。修正後も Gboard が同じ数を消す前提で、textarea と端末が一致し続けることまでを確かめる。
+    iOS 標準キーボードの列と、修正後の Gboard の列は実機で確かめていない（推定は ADR-20261027-1400）。予測候補・自動修正・音声入力・ハードウェアキーボード付き iPad は未検証。
+  - 根拠（xterm が捨てる列）: iOS の WebKit は、キーボードの入力メソッドが処理したキーの keydown を keyCode 229 にする。xterm の `_inputEvent` は、keydown から keyup までに来た
+    `composed` な `input`（UA の input は常に `composed`）を捨てる。文字は差分検出にしか拾われず、値の更新がその timer より遅れると落ちる（ADR-20261027-0020 の出典）。
 - 高さ合わせ（キーボード表示時）は追加しない。`#root` の追従（§6）で右パネルとターミナルのマウント要素が縮み、DSH の `ResizeObserver` → fit が走る前提（実機未確認。ADR-20261026-1800）。
 - mouse tracking を使うアプリでは、xterm がこの wheel をアプリへの入力に変える（デスクトップのホイールと同じ扱い）。
 
@@ -278,12 +335,16 @@ DSH 0.2.0-rc.2 の composer は修飾なしの Enter で送信し、Shift+Enter 
   ピンチズームの許可と `PinchFreezesRoot`（ADR-20261026-1450、KI-2・KI-8）は実機未確認。
   §4.4 のセッション行、§6.1 の自動フォーカス抑止、§6.2 の Enter で改行（ADR-20261026-1745）は実機未確認。happy-dom ではキーボードの表示を検査できず、`focus()` / `blur()` と `activeElement` で検査している。§6.2 は keydown の抑止と `beforeinput` の送出までを検査し、Lexical が実際に改行を挿入するかは検査できない（happy-dom の `InputEvent` は `getTargetRanges` を持たないため、テストで補っている）。happy-dom は `(pointer:coarse)` と `:has()` を組み合わせた規則・`:hover`・iOS の click 抑止を再現できないため、CSS は文字列と、media を外した規則の当たり方で検査している。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、60 件。`test/client.test.mjs` 44 件、`test/chrome.test.mjs` 16 件）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、118 件。`test/client.test.mjs` 44 件、`test/chrome.test.mjs` 17 件、`test/terminal-input.test.mjs` 57 件。うち 2 件は条件付き skip）。各テストは名前の `[§n]` で本書の節に対応する。
+  `test/terminal-input.test.mjs` は devDependency の `@xterm/xterm@6.0.0`（MIT）を happy-dom 上で動かし、onData に届く列を検査する。DSH 同梱の xterm と入力処理が同じことの照合は、
+  DSH の配布物がある環境でだけ走る（無ければ skip。`DSH_SIDEBAR_TERMINAL_JS` で場所を指定できる）。iOS のイベント列は実機の記録（xterm.js issue #5835）を合成したもので、実機の時刻・順序の全部は再現しない。
+  2026-10-28 の Gboard の記録は、そのまま再生する（再生モデルの確認テストは、Backspace をネイティブ削除にしない版でだけ走り、修正後の版では skip。`DSH_MOBILE_UI_CLIENT` で修正前の `lib/client.js` を指定して流す）。
   happy-dom で検査できないもの: カスタムプロパティの継承と実際の重なり、`env()` の値（probe の computed をスタブにする）、`display-mode`（規則の文字列で検査）、ソフトキーボードの表示、xterm 本体のスクロール。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
 - 実機未確認（ADR-20261026-1800）: §4.5・§5.3・§6 のセーフエリア実測。iPhone PWA での確認項目:
   1. 閉時に会話タイトルが FAB の右から始まるか（縦・横向き）。右パネルを開くと FAB が消え、閉じるボタン・左端からの右スワイプで戻ると FAB が出るか。
-  2. ターミナル（書込可能）をタップしてキーボードが出るか。読み取り専用ではキーボードが出ないか。縦ドラッグでスクロールバックが指に追従するか。横の右スワイプ（左端起点）で右パネルが畳まれるか。キーボード表示中に最下行が見えるか（見えなければ高さ合わせを追加する）。
+  2. ターミナル（書込可能）をタップしてキーボードが出るか。Gboard と標準キーボードの両方で、英字・数字・空白・かな→漢字の変換と確定・Enter・Backspace が 1 回ずつ入るか。変換で読みが端末の行に残らないか（KI-12、ADR-20261027-1400・1700・20261028-0330）。
+     濁点・半濁点・小書きを含む読み（例: 「ごきげん」→「ご機嫌」、「ぱぴぷ」、「きょう」→「今日」、「がっこう」→「学校」）を変換し、端末の行と（Enter 前の）入力が一致するか。Backspace の 1 回押しと長押し（リピート）で、消えた数だけ端末の行も消えるか。読み取り専用ではキーボードが出ないか。縦ドラッグでスクロールバックが指に追従するか。横の右スワイプ（左端起点）で右パネルが畳まれるか。キーボード表示中に最下行が見えるか（見えなければ高さ合わせを追加する）。
   3. Safari の Web インスペクタで `html` の `--dsh-mobile-safe-*` と `data-dsh-mobile-native-gap` の値、`screen.height` / `innerHeight` を記録する。`detected` のとき、下端の余白が二重に見えるか。
      二重なら `localStorage.setItem("dsh-mobile-ui:native-gap","on")` で再読込し、余白が消えてホームインジケータに入力欄が重ならないかを見る。
 

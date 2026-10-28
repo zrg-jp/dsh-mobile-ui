@@ -20,6 +20,7 @@
 | KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
 | KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/HARU-pc/dsh-mobile-ui/issues/11)） |
 | KI-11 | FAB が会話のセッション名・右パネルのファイル名の先頭を隠す | スマホ | 対応済み・実機確認待ち（ADR-20261026-1800、[#12](https://github.com/HARU-pc/dsh-mobile-ui/issues/12)） |
+| KI-12 | 右パネルのターミナルで、キーボードは出るのに文字が入らない（日本語は変換できない、変換で読みが残る） | iPhone PWA（実機で報告あり） | 解決（ADR-20261027-1400・1700・20261028-0330、2026-10-29 に実機で確認。Gboard・標準キーボード） |
 
 ## KI-1 Escape で閉じた後、フォーカスが FAB に戻らない（旧 Q1）
 
@@ -153,3 +154,59 @@
   FAB の右から始める（DSH 0.2.0-rc.2 の ui-conversation が参照する）。右パネル展開中は FAB を隠す（spec.md §4.5）。
   右パネルからサイドバーへは、右パネルを閉じるボタンか左端からの右スワイプで畳んでから FAB を使う。
 - **残る制限**: 全画面ルート（Plugins / Schedules など）の見出しと FAB の重なりは扱っていない。DSH が変数の参照をやめると、重なる元の表示へ戻る。
+
+## KI-12 右パネルのターミナルで、キーボードは出るのに文字が入らない（T311）
+
+- **観測**: オーナーが iPhone PWA の実機で報告した（2026-10-26）。T343 のタップ時フォーカスより前から起きていた。
+  2026-10-26 23:23 の追加報告: 読み取り専用ではない（タップでキーボードが出る）。キーボードは Gboard。Enter は入り、押すたびにプロンプトが進む。
+  英字はほぼ入らず、まれに `a` だけが入った。
+- **原因（コード・一次資料と happy-dom の再現による。実機のイベント記録は未取得）**:
+  1. iOS の WebKit は、キーボードの入力メソッドが処理したキーの keydown を keyCode 229 にする（WebKit `EventHandler.cpp` の `CompositionEventKeyCode = 229`）。
+     Gboard などのサードパーティキーボードは文字を `insertText` で入れるため、英字も keydown 229 → `beforeinput` / `input`（`insertText`、`composed:true`）→ keyup の列になる（推定。
+     同じ列は iOS の中国語 IME の空白・句読点で記録がある: xterm.js issue #5835）。
+  2. xterm 6.0.0 の `_inputEvent`（sidebar-terminal 0.2.0-rc.2 `client.terminal.js:532`）は、keydown から keyup まで（`_keyDownSeen`）に来た `composed` な input を捨てる。
+     UA の input は常に `composed` なので、この列の文字は xterm の CompositionHelper の差分検出（同 `:1291-1326`）にしか拾われない。
+  3. 差分検出は keydown のときの値を控え、`setTimeout(0)` の後の値と比べる。値の更新がこの timer より遅れると、比べた時点で値はまだ変わっておらず、文字が落ちる
+     （#5835 の記録では input が keydown より 7–10ms 遅れる。iOS の実際の timer との前後は未計測）。
+  4. Enter は keyCode 13 の keydown を xterm が自分で `\r` に変えて送るので通る（同 `:493-511`、`:5140` 付近の `evaluateKeyboardEvent`）。Backspace も同じ経路。
+  5. まれに `a` だけ入る理由（仮説、未検証）: (i) 入力が keydown の timer より先に値へ入った打鍵だけを差分検出が拾う（happy-dom で input の遅れを 0ms にすると届き、1ms 以上で落ちる）、
+     または (ii) その打鍵だけ keydown が keyCode 65 で来た（xterm は keyCode ≥ 48 の 1 文字を keydown で送る）。`a` に偏る理由は特定していない。
+- **対応（1 回目、f8e4bb0）**: ADR-20261027-0020。`COARSE` で、xterm が捨てる `insertText` の input を document の capture で止め、`composed` でない input として同じ data を送り直す。
+  送り直す前に textarea の値を `beforeinput` の時点へ戻し、差分検出との二重送信を避けた。
+- **追加の観測（2026-10-27 13:25、f8e4bb0、Gboard）**: 英字は入るようになった。日本語はひらがなが送られる（`echo` で「こんにちは」）が、かな→漢字の変換ができない。
+  （zsh の行編集でマルチバイトが `<0081><0093>` 等と出るのは、稼働中の DSH プロセスに LANG / LC_* が無く PTY の zsh が C ロケールで動くため。別件で、本項の対象外。）
+- **原因（2 回目。コード・一次資料・合成列による。実機のイベント記録は未取得）**: f8e4bb0 の値の巻き戻しで、キーボードが入れたかなは textarea から即座に消える。
+  iOS のサードパーティキーボードは文書を `UITextDocumentProxy` のカーソル前の文脈でしか見ず、Gboard などは marked text をほぼ使わない（推定。出典は ADR-20261027-1400）。
+  候補を選ぶとき、キーボードはカーソル前の読みを消して漢字を入れるが、消す読みが textarea に無いので変換できない（推定）。
+- **対応（2 回目）**: ADR-20261027-1400（spec.md §5.3 `TerminalInputReachesOnce`）。textarea の値に触れない。keyCode 229 の keydown を xterm に見せず（差分検出を起こさせない）、
+  編集の input（挿入・置換・後方削除）を `beforeinput` の時点の値との差（DEL × 消えた数 ＋ 入った文字）として送る。変換中・確定の送信待ちは xterm の CompositionHelper に任せる。
+  xterm が keydown で送る Backspace（keyCode 8。キーリピートを含む）は、送った数だけ textarea からも消して端末の行とそろえる。
+- **追加の観測（2026-10-27 16:36、4a07c17、UTF-8 ロケールの zsh、Gboard）**: 英字・かな・Enter は入り、文字化けも解消した。
+  「echo ご」→「きげん」→「機嫌」へ変換 →「麗しゅう」と打つと、端末の行は `echo ごきげ機嫌麗しゅう` になった。読み 3 文字のうち 1 文字しか消えていない。
+  `echo hell.こんにちは` も入った（打鍵の意図は未確認）。
+- **原因（3 回目。合成列による再現。実機のイベント記録は未取得）**: 4a07c17 は、差分を直前の `beforeinput` の時点の値から取る。
+  後方削除の `beforeinput` と `input` が 1 対 1 に並ばない列では、消した数を数え落とす。該当するのは、2 回目以降の削除に `beforeinput` が無い列と、`beforeinput` が先にまとめて来る列。
+  happy-dom と xterm 6.0.0 で 13 種の列を流したところ、観測と一致したのはこの 2 列だけだった（表は ADR-20261027-1700）。
+  WebKit の TypingCommand は、続く後方削除を開いたままのコマンドに足し、`input` を scoped queue に積む。このため、この並びは起こりうる（推定）。
+  「hell.」は、1 文字消して「.」を入れる列ならどの列でも同じになるので、列の特定には使えない。
+- **対応（3 回目）**: ADR-20261027-1700。差分の起点を「送信済みの影」にした。影は、本プラグインが直前に送った時点、または Backspace を写した時点の textarea の値。
+  影が無いときは、従来どおり `beforeinput` の時点の値を起点にする。xterm が値を変える場面や、xterm 自身が送る場面では影を捨てる。
+- **追加の観測（2026-10-28、be2a06b と同じ入力処理の検証ブランチ 3ee01c8、iPhone iOS 18.7・PWA・Gboard）**: 「ごきげん」と打って候補「ご機嫌」を選ぶと、textarea は「ごき機嫌」、端末の行は「ごきげ機嫌」になった。
+  アプリ内ロガーでイベント列を記録した（抜粋は `test/fixtures/20261028-gboard-gokigen.json`）。
+- **原因（4 回目。実機の記録と、その再生による）**: Gboard は濁点の付け替え（こ→ご）にも、変換で読みを消すときにも後方削除を使う。連続する削除のうち 1 回目だけが keyCode 8 の keydown になり、
+  xterm がそれを DEL にして `preventDefault` するので、UA はその 1 文字を消さない。濁点では、本プラグインの Backspace の写しが keyup で消すので合っていた。
+  変換では、Gboard は 3 回消した（keydown 8 の 1 回目と、keydown 無しのネイティブ削除 2 回）。1 回目は xterm が DEL を送ったが textarea からは消えず、写しも「UA が値を変えた」ので消さなかった（textarea「ごき機嫌」）。
+  2・3 回目のネイティブ削除は、直前の keydown 8 が `defaultPrevented` なので「keydown で送り済み」として送らなかった（端末「ごきげ機嫌」）。
+  Gboard の内部状態のずれを仮定しなくても、両方の値は説明できる（再生の値の推移が、記録と全イベントで一致する）。
+- **対応（4 回目）**: ADR-20261028-0330。`COARSE` で、消す文字がある修飾キーなしの keyCode 8 の keydown を xterm に見せず（`preventDefault` しない）、UA にネイティブに消させる。
+  その `deleteContentBackward` を差分の経路（送信済みの影）が DEL として送る。Backspace の写しは、確定の送信待ちを解く Backspace だけに残る。
+- **テスト**: `test/terminal-input.test.mjs`（npm の `@xterm/xterm@6.0.0` を happy-dom で動かす。57 件、うち DSH 同梱版との照合 1 件は配布物が無ければ skip、実機の再生モデルの確認 1 件は修正後の版では skip）。
+  4 回目の対応で 6 件を足した（実機の列の再生、再生モデルの確認、xterm に任せる Backspace の境界、beforeinput の無いネイティブ削除、送信待ちを解いた後のリピート 2 件）。keyCode 8 を UA の既定動作なしで流していた既存の 5 件は、ネイティブ削除を再現する形に直した。
+  日本語の変換の合成列 3 件（Gboard 型 2・標準キーボード型 1）は d686e25・f8e4bb0 のどちらでも赤。ADR-20261027-1400 の変異 17 種はすべて赤。
+  3 回目の対応で 13 件を足した（後方削除の並びの 4 列、Backspace の写しの後、影を捨てる場面、変換の後、編集外の変化、レビューの反例 5 件）。そのうち 7 件は 4a07c17 で赤になる。影の変異 15 種はすべて赤（ほかに、防御の処理を外す 2 種が緑のまま。ADR-20261027-1700）。
+- **残る制限**: Gboard の内部状態（UITextDocumentProxy・未確定範囲）は再現できない。修正後も Gboard が同じ数を消すかは実機で確かめる。iOS 標準キーボードの列は記録が無い。
+  ほかの iOS の列は合成で、時刻・順序の全部は再現しない。Gboard の英字・かな・変換の列は推定（実機のイベント記録が無い）。変換の削除が「後方削除の繰り返し」か「選択して置換」か、また `beforeinput` と `input` がどう並ぶかも未確認（ADR-20261027-1700 の表の列はどれも扱う。marked text で読みを選択して置換する列だけは扱えない）。
+  端末の行のカーソルは textarea のカーソル（末尾）に対応するとみなすため、textarea 内でカーソルを動かした編集（スペースキー長押しのカーソル移動など）は端末とずれる。
+  textarea の値は Enter・blur まで伸びる。確定の送信待ちの解除は timer の順序による近似。予測候補の単語挿入・自動修正・音声入力・ハードウェアキーボード付き iPad は未検証。
+  xterm を版上げして `_inputEvent` が直った（PR #5614 相当）場合は、プラグイン無しの再現テストが赤になるので、介入を外すか見直す。
+- **実機の確認手順**: spec.md §8 の 2。切り分け用のスニペット `tmp/terminal-input-probe.js`（worktree `fix/terminal-ios-input` の tmp/、commit しない）は、直らなかったときのイベント記録に使う。
