@@ -24,14 +24,16 @@ const FRAME_HTML = `<div id="root"><div id="frame" data-sidebar-collapsed>
  * @param {boolean} [opt.withFrame=true] AppFrame を描画するか
  * @param {boolean} [opt.reducedMotion=false] prefers-reduced-motion:reduce を CSS の media で一致させるか
  * @param {boolean} [opt.withSessions=true] 任意サービス ctx.sessions を提供するか（T309-C）
+ * @param {string} [opt.url="http://localhost/"] ページの URL（リモート接続の判定に使う。spec §6.3）
+ * @param {string} [opt.body=""] AppFrame の後に body 直下へ足す HTML
  */
-export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false, viewport = "width=device-width, initial-scale=1", scale = 1, displayMode = "browser", standalone = undefined, screenSize = null, safeInsets = null, storage = {}, terminal = false, rightExpanded = false, withSessions = true } = {}) {
+export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false, viewport = "width=device-width, initial-scale=1", scale = 1, displayMode = "browser", standalone = undefined, screenSize = null, safeInsets = null, storage = {}, terminal = false, rightExpanded = false, withSessions = true, url = "http://localhost/", body = "" } = {}) {
 	// prefers-reduced-motion は happy-dom の device 設定で CSS のカスケードに反映される（20.14.6 で確認）。
-	const window = new Window({ width, height, url: "http://localhost/", settings: { device: { prefersReducedMotion: reducedMotion ? "reduce" : "no-preference" } } });
+	const window = new Window({ width, height, url, settings: { device: { prefersReducedMotion: reducedMotion ? "reduce" : "no-preference" } } });
 	const document = window.document;
 	// viewport: 起動前の meta content（既定は DSH 0.2.0-rc.2 の dist/index.html と同じ値）。null なら content 属性なし。
 	const metaAttr = viewport === null ? "" : ` content="${viewport}"`;
-	document.write(`<!doctype html><html><head><meta name="viewport"${metaAttr}></head><body>${withFrame ? FRAME_HTML : '<div id="root"></div>'}</body></html>`);
+	document.write(`<!doctype html><html><head><meta name="viewport"${metaAttr}></head><body>${withFrame ? FRAME_HTML : '<div id="root"></div>'}${body}</body></html>`);
 	// terminal: 右パネルの sidebar-terminal（0.2.0-rc.2）が描く xterm 6.0 の DOM の要点を rightbarCol に置く。
 	if (terminal && withFrame) {
 		document.getElementById("right").innerHTML = `<section data-sidebar-terminal><div class="screen"><div class="terminal xterm" id="xterm">

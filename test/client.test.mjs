@@ -979,3 +979,55 @@ test("[§6.2 EnterNewlineOptOut] localStorage の dsh-mobile-ui:enterNewline='0'
 	assert.deepEqual(z.seen, { submit: 1, lineBreak: 0 });
 	z.h.close();
 });
+
+// ---- §6.3 リモート接続ではホストのアプリ・Finder を開く操作を隠す ----
+const OPEN_TARGET = '<div id="open" data-open-target="directory"><button id="open-btn">o</button></div>';
+const openLocalKey = (h, init) => {
+	// DSH のショートカット処理は window の bubble 段階（dsh-client-shortcuts 0.2.0-rc.2）。
+	let reached = 0;
+	const onKey = () => { reached++; };
+	h.window.addEventListener("keydown", onKey);
+	const event = new h.window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, code: "KeyO", ...init });
+	h.el("msg").dispatchEvent(event);
+	h.window.removeEventListener("keydown", onKey);
+	// 伝播は止めても既定動作は妨げない（spec §6.3）。
+	assert.equal(event.defaultPrevented, false);
+	return reached;
+};
+
+test("[§6.3] ループバック以外のホスト名なら html に印を付け、Open In 系の操作を隠す", async () => {
+	const h = mount({ url: "https://host.example.ts.net/", body: OPEN_TARGET });
+	assert.equal(h.document.documentElement.hasAttribute("data-dsh-mobile-remote"), true);
+	assert.equal(h.window.getComputedStyle(h.el("open")).display, "none");
+	h.close();
+});
+
+test("[§6.3] ループバック（localhost / 127.x / ::1）では印を付けず、操作も隠さない", async () => {
+	for (const url of ["http://localhost:3080/", "http://localhost.:3080/", "http://127.0.0.1:3080/", "http://[::1]:3080/"]) {
+		const h = mount({ url, body: OPEN_TARGET });
+		assert.equal(h.document.documentElement.hasAttribute("data-dsh-mobile-remote"), false, url);
+		assert.notEqual(h.window.getComputedStyle(h.el("open")).display, "none", url);
+		h.close();
+	}
+});
+
+test("[§6.3] リモートでは ⌘/Ctrl+Shift+O を DSH のショートカット処理へ届けない", async () => {
+	const h = mount({ url: "https://host.example.ts.net/" });
+	assert.equal(openLocalKey(h, { metaKey: true, shiftKey: true }), 0);
+	assert.equal(openLocalKey(h, { ctrlKey: true, shiftKey: true }), 0);
+	// 他のキーは素通しする。
+	assert.equal(openLocalKey(h, { metaKey: true }), 1);
+	assert.equal(openLocalKey(h, { metaKey: true, shiftKey: true, altKey: true }), 1);
+	h.close();
+	const local = mount();
+	assert.equal(openLocalKey(local, { metaKey: true, shiftKey: true }), 1);
+	local.close();
+});
+
+test("[§6.3 §7] dispose でリモートの印とキー遮断を外す", async () => {
+	const h = mount({ url: "https://host.example.ts.net/" });
+	h.dispose();
+	assert.equal(h.document.documentElement.hasAttribute("data-dsh-mobile-remote"), false);
+	assert.equal(openLocalKey(h, { metaKey: true, shiftKey: true }), 1);
+	h.window.happyDOM.close();
+});

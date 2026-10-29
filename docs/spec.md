@@ -18,6 +18,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | キーボード追従・入力 16px・入力欄の自動フォーカス抑止・Enter で改行 | `COARSE` | §6 |
 | viewport meta の書換 | 常時（幅・ポインタで分けない） | §6 |
 | セーフエリア padding・実測 | 幅 ≤1023px かつ `display-mode` が standalone / fullscreen（`SAFE_AREA`） | §6 |
+| ホストで開く操作（Open In・ファイルの場所を表示）の非表示 | ページのホスト名がループバック以外（§2 `REMOTE`） | §6.3 |
 
 ## 2. 用語と判定条件
 
@@ -30,6 +31,7 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | sidebarCol | frame の先頭の子要素 | [client.js:90](../lib/client.js#L90)、[client.js:429](../lib/client.js#L429) |
 | 開／閉 | frame に `data-sidebar-collapsed` が無ければ開、あれば閉。frame が無ければ常に閉として扱う | [client.js:364-367](../lib/client.js#L364-L367) |
 | 右パネル展開 | `ctx.sidebarRight.isExpanded()` が true | [client.js:528](../lib/client.js#L528)、[client.js:809](../lib/client.js#L809) |
+| `REMOTE` | `location.hostname`（末尾ドットを除く）が `localhost`・`127.x.x.x`・`::1` のどれでもない（起動時に 1 回判定） | client.js `isLoopbackHost` |
 | オーバーレイ | `document.body` の子要素で、computed `position` が `fixed` のもの（DSH のメニュー・モーダル・トースト、本プラグインの FAB） | [client.js:380-414](../lib/client.js#L380-L414) |
 
 768–1023px は DSH 本体の狭幅挙動（<1024px でレール化し、トグルでオーバーレイ展開）に任せ、本プラグインはレイアウトを変えない。
@@ -57,6 +59,8 @@ DSH Web GUI をスマホ・タブレットで使うためのローカル client 
 | `data-sidebar-right-open`（展開時だけ付く）と、セッション切替で変わる `hidden` | ui-sidebar-right `SidebarPanel` / `SessionView` | 右パネル展開の再判定の契機（判定自体は `isExpanded()`。§4.5） |
 | `section[data-sidebar-terminal]` | ui-sidebar-terminal（`client.terminal.js` 13288, 13334） | ターミナルの特定（§5.3） |
 | xterm.js 6.0.0 の公開 DOM クラス `.xterm` / `.xterm-helper-textarea` / `.xterm-scrollable-element`、helper textarea の `readOnly`（`disableStdin`）、ピクセル単位の `wheel` でスクロールすること、`composed` でない `insertText` の `input` を keydown の有無に依らず送ること（`_inputEvent`、`client.terminal.js:532`） | ui-sidebar-terminal が同梱する xterm（ハッシュ化されないサードパーティのクラス。版の更新で変わりうる） | タップで focus、合成 wheel、iOS の文字入力の送り直し（§5.3） |
+| `data-open-target`（ui-open-in-app の `OpenTargetButton` の外枠） | ui-open-in-app。セッションヘッダ・ファイルタブ・文書プレビュー・成果物カード・変更レビューで共通 | 非表示の対象（§6.3） |
+| ショートカット処理が window の keydown（bubble）で走ること、`workspace.openLocal` の Web 既定が ⌘/Ctrl+Shift+O | dsh-client-shortcuts / ui-open-in-app | キーの遮断（§6.3） |
 | `document.body` へ portal される固定オーバーレイ | ui-primitives `MenuSurface`、model-selection `ModelSelect`（`createPortal(..., document.body)`）、Modal、Toast（0.2.0-rc.2 で確認） | 座標系の補正対象（§6） |
 
 不変条件 `SafeDegrade`（範囲限定）: `data-rightbar-col` が無くなって frame を特定できない場合、frame 用の CSS（ドロワー・バックドロップ・列）は一致しなくなる。JS 側は `body[data-dsh-mobile-sidebar=none]` となり、FAB は表示されない（[client.js:426](../lib/client.js#L426)）。
@@ -322,20 +326,36 @@ DSH 0.2.0-rc.2 の composer は修飾なしの Enter で送信し、Shift+Enter 
 - `EnterNewlineOptOut`: `localStorage["dsh-mobile-ui:enterNewline"] = "0"` で無効になる（次の keydown から反映）。切替 UI は未実装。
 - §6 のキーボード追従（KI-9）とは独立する。改行は入力欄の高さを変えるだけで、visual viewport は動かさない（推定。実機未確認）。
 
+### 6.3 リモート接続でホストの画面を使う操作（ADR-20261026-1750）
+
+DSH はアプリ起動・Finder 表示・ネイティブのフォルダ選択を**ホスト（DSH を動かしている Mac）の画面**で実行する。
+Tailscale Serve などで別端末から開くと、押しても手元では何も起きない。サーバは Serve の転送先 127.0.0.1 で bind するため、
+DSH 側の判定（`dsh-host-directory-picker-auto` の bind 判定、open-in-app の可否）ではリモートと区別できない。
+
+| 機能 | 対応 | 実装の場所 |
+|---|---|---|
+| Open In…（セッションヘッダ・ファイルタブ）、ファイルを既定アプリで開く・ファイルの場所を表示（文書プレビュー・成果物カード・変更レビュー） | `REMOTE` のとき `html[data-dsh-mobile-remote] [data-open-target]{display:none !important}` で非表示。代替は既存のアプリ内プレビュー（カード本体のタップで右パネルに開く） | 本プラグイン |
+| ショートカット「Open locally」（⌘/Ctrl+Shift+O） | `REMOTE` のとき document の keydown（bubble）で `stopPropagation` し、DSH のショートカット処理へ届けない。`preventDefault` はしない | 本プラグイン |
+| Workspace 追加（フォルダ選択） | プロファイルの `cordis.patch.yml` で `directory-picker`（auto）を無効化し、`dsh-host-directory-picker-browse` と `dsh-client-ui-directory-picker-browse` を直接載せる。アプリ内のフォルダ一覧ダイアログになり、スマホでも選択・新規作成できる。ローカル接続でも同じダイアログになる | プロファイル設定（README「Remote access: folder picker」） |
+
+- 不変条件 `RemoteHidesHostOpeners`: `REMOTE` の間、`[data-open-target]` は表示されない。ループバックでは触らない。
+- dispose で `data-dsh-mobile-remote` とキーのリスナーを外す（§7）。
+- 制限: 利用者がショートカットの割当てを変えた場合は遮断できない（[KI-13](known-issues.md)）。
+
 ## 7. ライフサイクル
 
-- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:974-976](../lib/client.js#L974-L976)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、inert、全リスナー、observer。
+- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:974-976](../lib/client.js#L974-L976)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、html の `data-dsh-mobile-remote`、inert、全リスナー、observer。
 - 例外: §4.4 の切替検知は `ctx.inject` の子 fiber の effect に置く（`OptionalSessions`）。親 fiber の停止、または `sessions` サービスの撤去で購読を外す。
 - `style[data-plugin-css="dsh-mobile-ui/override.css"]` が既にあれば、style タグを重ねて挿入しない。この場合、既存のタグは本 effect の撤去対象にならない。
 - 撤去手段は、`cordis.patch.yml` の insert を削除することと、ページを再読込すること（README）。
 
 ## 8. 検証状況
 
-- 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。iPad と Android は未確認。
+- 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。リモート接続での Open 系の非表示とフォルダ選択（§6.3）は 2026-10-26 にユーザーが確認した。iPad と Android は未確認。
   ピンチズームの許可と `PinchFreezesRoot`（ADR-20261026-1450、KI-2・KI-8）は実機未確認。
   §4.4 のセッション行、§6.1 の自動フォーカス抑止、§6.2 の Enter で改行（ADR-20261026-1745）は実機未確認。happy-dom ではキーボードの表示を検査できず、`focus()` / `blur()` と `activeElement` で検査している。§6.2 は keydown の抑止と `beforeinput` の送出までを検査し、Lexical が実際に改行を挿入するかは検査できない（happy-dom の `InputEvent` は `getTargetRanges` を持たないため、テストで補っている）。happy-dom は `(pointer:coarse)` と `:has()` を組み合わせた規則・`:hover`・iOS の click 抑止を再現できないため、CSS は文字列と、media を外した規則の当たり方で検査している。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、118 件。`test/client.test.mjs` 44 件、`test/chrome.test.mjs` 17 件、`test/terminal-input.test.mjs` 57 件。うち 2 件は条件付き skip）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、122 件。`test/client.test.mjs` 48 件、`test/chrome.test.mjs` 17 件、`test/terminal-input.test.mjs` 57 件。うち 2 件は条件付き skip）。各テストは名前の `[§n]` で本書の節に対応する。
   `test/terminal-input.test.mjs` は devDependency の `@xterm/xterm@6.0.0`（MIT）を happy-dom 上で動かし、onData に届く列を検査する。DSH 同梱の xterm と入力処理が同じことの照合は、
   DSH の配布物がある環境でだけ走る（無ければ skip。`DSH_SIDEBAR_TERMINAL_JS` で場所を指定できる）。iOS のイベント列は実機の記録（xterm.js issue #5835）を合成したもので、実機の時刻・順序の全部は再現しない。
   2026-10-28 の Gboard の記録は、そのまま再生する（再生モデルの確認テストは、Backspace をネイティブ削除にしない版でだけ走り、修正後の版では skip。`DSH_MOBILE_UI_CLIENT` で修正前の `lib/client.js` を指定して流す）。
