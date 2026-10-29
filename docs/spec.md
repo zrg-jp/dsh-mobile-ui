@@ -336,7 +336,7 @@ DSH 側の判定（`dsh-host-directory-picker-auto` の bind 判定、open-in-ap
 |---|---|---|
 | Open In…（セッションヘッダ・ファイルタブ）、ファイルを既定アプリで開く・ファイルの場所を表示（文書プレビュー・成果物カード・変更レビュー） | `REMOTE` のとき `html[data-dsh-mobile-remote] [data-open-target]{display:none !important}` で非表示。代替は既存のアプリ内プレビュー（カード本体のタップで右パネルに開く） | 本プラグイン |
 | ショートカット「Open locally」（⌘/Ctrl+Shift+O） | `REMOTE` のとき document の keydown（bubble）で `stopPropagation` し、DSH のショートカット処理へ届けない。`preventDefault` はしない | 本プラグイン |
-| Workspace 追加（フォルダ選択） | プロファイルの `cordis.patch.yml` で `directory-picker`（auto）を無効化し、`dsh-host-directory-picker-browse` と `dsh-client-ui-directory-picker-browse` を直接載せる。アプリ内のフォルダ一覧ダイアログになり、スマホでも選択・新規作成できる。ローカル接続でも同じダイアログになる | プロファイル設定（README「Remote access: folder picker」） |
+| Workspace 追加（フォルダ選択） | プロファイルの `cordis.patch.yml` で `directory-picker`（auto）を無効化し、`dsh-host-directory-picker-browse` と `dsh-client-ui-directory-picker-browse` を直接載せる。アプリ内のフォルダ一覧ダイアログになり、スマホでも選択・新規作成できる。ローカル接続でも同じダイアログになる。プロファイルの patch は DSH が再起動なしで読み直すので、ページの再読込で反映される（2026-10-30 の観測、dsh-app-boot 0.2.0-rc.2） | プロファイル設定（README「Remote access: folder picker」） |
 
 - 不変条件 `RemoteHidesHostOpeners`: `REMOTE` の間、`[data-open-target]` は表示されない。ループバックでは触らない。
 - dispose で `data-dsh-mobile-remote` とキーのリスナーを外す（§7）。

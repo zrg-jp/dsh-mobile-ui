@@ -40,10 +40,10 @@ Then reload the DSH web page on your device. To uninstall, remove the insert ent
 ### Remote access: folder picker / リモート利用時のフォルダ選択
 
 When you reach DSH from another device (e.g. Tailscale Serve), "Add workspace" opens a native chooser on the host's screen by default.
-Pin the in-app browser instead, then restart DSH (docs/spec.md §6.3):
+Pin the in-app browser instead, then reload the page — the profile patch is hot-reloaded, no DSH restart needed (docs/spec.md §6.3):
 
 別端末（Tailscale Serve など）から使う場合、「Workspace 追加」は既定でホスト画面のフォルダ選択を開くため、手元では何も起きない。
-次をプロファイルに足して DSH を再起動すると、アプリ内のフォルダ一覧ダイアログになる。
+次をプロファイルに足してページを再読込すると、アプリ内のフォルダ一覧ダイアログになる（プロファイルの patch は DSH が読み直すので、再起動は要らない）。
 
 ```yaml
 - id: directory-picker
