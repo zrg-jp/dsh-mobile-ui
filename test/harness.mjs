@@ -26,8 +26,9 @@ const FRAME_HTML = `<div id="root"><div id="frame" data-sidebar-collapsed>
  * @param {boolean} [opt.withSessions=true] 任意サービス ctx.sessions を提供するか（T309-C）
  * @param {string} [opt.url="http://localhost/"] ページの URL（リモート接続の判定に使う。spec §6.3）
  * @param {string} [opt.body=""] AppFrame の後に body 直下へ足す HTML
+ * @param {(env: {window: any, document: any}) => void} [opt.beforeApply] プラグイン適用の直前に呼ぶ（mount 前の DOM の記録・加工。spec §7）
  */
-export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false, viewport = "width=device-width, initial-scale=1", scale = 1, displayMode = "browser", standalone = undefined, screenSize = null, safeInsets = null, storage = {}, terminal = false, rightExpanded = false, withSessions = true, url = "http://localhost/", body = "" } = {}) {
+export function mount({ width = 390, height = 800, coarse = true, withFrame = true, reducedMotion = false, viewport = "width=device-width, initial-scale=1", scale = 1, displayMode = "browser", standalone = undefined, screenSize = null, safeInsets = null, storage = {}, terminal = false, rightExpanded = false, withSessions = true, url = "http://localhost/", body = "", beforeApply = null } = {}) {
 	// prefers-reduced-motion は happy-dom の device 設定で CSS のカスケードに反映される（20.14.6 で確認）。
 	const window = new Window({ width, height, url, settings: { device: { prefersReducedMotion: reducedMotion ? "reduce" : "no-preference" } } });
 	const document = window.document;
@@ -154,6 +155,7 @@ export function mount({ width = 390, height = 800, coarse = true, withFrame = tr
 	// client.js は window のグローバル名を素で参照するため、必要なものを引数として束縛して評価する。
 	const globals = ["window", "document", "getComputedStyle", "MutationObserver", "Node", "Element"];
 	new Function(...globals, source)(window, document, getComputedStyleStub, window.MutationObserver, window.Node, window.Element);
+	beforeApply?.({ window, document });
 	plugin.apply(ctx);
 
 	const flush = () => new Promise((r) => setTimeout(r, 0));
