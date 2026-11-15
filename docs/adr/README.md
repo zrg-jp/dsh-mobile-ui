@@ -13,6 +13,7 @@ dsh-mobile-ui の設計判断の記録（日本語）。経緯の記録であり
 | 20261024-0430 | main へ直接 commit せず、作業ブランチ + PR + CI で統合する | accepted | 2026-10-24 |
 | 20261024-0450 | キーボード表示中は #root を visual viewport に追従させ、ページを scrollTo で戻さない | accepted | 2026-10-24 |
 | 20261024-1646 | body 直下へ portal される固定オーバーレイを #root と同じ座標系へ寄せる | accepted | 2026-10-24 |
+| 20261024-1710 | リポジトリの所有者を HARU-pc から zrg-jp Organization へ移す | accepted | 2026-10-24 |
 | 20261026-1416 | サイドバーを開く右スワイプは画面全体を起点にできる | accepted | 2026-10-26 |
 | 20261026-1450 | ピンチズームを許可し、ズーム中は visual viewport 追従を止める | proposed | 2026-10-26 |
 | 20261026-1457 | Web Push 通知を host 半身で送る（SW の scope、鍵の保存、通知に載せる内容、認可） | proposed | 2026-10-26 |

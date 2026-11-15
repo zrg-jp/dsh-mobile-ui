@@ -23,7 +23,7 @@ DSH Web GUI をスマホ・タブレットで使いやすくするローカル c
 ## Install / 導入
 
 ```sh
-git clone https://github.com/HARU-pc/dsh-mobile-ui.git
+git clone https://github.com/zrg-jp/dsh-mobile-ui.git
 ln -s "$(pwd)/dsh-mobile-ui" ~/.dsh/local-plugins/dsh-mobile-ui
 ```
 
