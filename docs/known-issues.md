@@ -9,17 +9,17 @@
 
 | ID | 概要 | 影響範囲 | 状態 |
 |---|---|---|---|
-| KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#1](https://github.com/HARU-pc/dsh-mobile-ui/issues/1)） |
-| KI-2 | ピンチズームで `#root` の高さが縮む | iPhone PWA（KI-8 の修正で顕在化） | 対応済み・実機確認待ち（ADR-20261026-1450、[#2](https://github.com/HARU-pc/dsh-mobile-ui/issues/2)） |
-| KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#3](https://github.com/HARU-pc/dsh-mobile-ui/issues/3)） |
-| KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/HARU-pc/dsh-mobile-ui/issues/4)） |
-| KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#5](https://github.com/HARU-pc/dsh-mobile-ui/issues/5)） |
-| KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 解決（T342 / ADR-20261105-2030、実機未確認。COARSE の change で外し・付け直す。[#6](https://github.com/HARU-pc/dsh-mobile-ui/issues/6)） |
-| KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#7](https://github.com/HARU-pc/dsh-mobile-ui/issues/7)） |
+| KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#1](https://github.com/zrg-jp/dsh-mobile-ui/issues/1)） |
+| KI-2 | ピンチズームで `#root` の高さが縮む | iPhone PWA（KI-8 の修正で顕在化） | 対応済み・実機確認待ち（ADR-20261026-1450、[#2](https://github.com/zrg-jp/dsh-mobile-ui/issues/2)） |
+| KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#3](https://github.com/zrg-jp/dsh-mobile-ui/issues/3)） |
+| KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/zrg-jp/dsh-mobile-ui/issues/4)） |
+| KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#5](https://github.com/zrg-jp/dsh-mobile-ui/issues/5)） |
+| KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 解決（T342 / ADR-20261105-2030、実機未確認。COARSE の change で外し・付け直す。[#6](https://github.com/zrg-jp/dsh-mobile-ui/issues/6)） |
+| KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#7](https://github.com/zrg-jp/dsh-mobile-ui/issues/7)） |
 | KI-9 | 入力欄をタップすると、入力欄が画面の上へ外れていく | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-0450、2026-10-24 に実機で確認） |
-| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/HARU-pc/dsh-mobile-ui/issues/8)） |
-| KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/HARU-pc/dsh-mobile-ui/issues/11)） |
-| KI-11 | FAB が会話のセッション名・右パネルのファイル名の先頭を隠す | スマホ | 対応済み・実機確認待ち（ADR-20261026-1800、[#12](https://github.com/HARU-pc/dsh-mobile-ui/issues/12)） |
+| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/zrg-jp/dsh-mobile-ui/issues/8)） |
+| KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/zrg-jp/dsh-mobile-ui/issues/11)） |
+| KI-11 | FAB が会話のセッション名・右パネルのファイル名の先頭を隠す | スマホ | 対応済み・実機確認待ち（ADR-20261026-1800、[#12](https://github.com/zrg-jp/dsh-mobile-ui/issues/12)） |
 | KI-12 | 右パネルのターミナルで、キーボードは出るのに文字が入らない（日本語は変換できない、変換で読みが残る） | iPhone PWA（実機で報告あり） | 解決（ADR-20261027-1400・1700・20261028-0330、2026-10-29 に実機で確認。Gboard・標準キーボード） |
 | KI-13 | リモート接続で、変更したショートカットから「Open locally」が動く | 外付けキーボード＋割当て変更 | 記録のみ（[#19](https://github.com/zrg-jp/dsh-mobile-ui/issues/19)） |
 
