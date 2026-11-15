@@ -46,6 +46,20 @@ npm test
 5. 実機で確認する（iPhone PWA。iPad・Android は、確認したら spec.md §8 に記録する）。
 6. 差分を見直し、秘密情報の検査（`~/.config/git/hooks/secret-scan`）をしてから commit する。
 
+## 第三者コードの移植
+
+上流 [kuraneko1/dsh-mobile-maxxing](https://github.com/kuraneko1/dsh-mobile-maxxing)（MIT, Copyright (c) 2026 kuraneko1）
+からコードを持ち込むときの運用。ライセンス全文と取り込み一覧の正本は [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
+
+- **コードを移植・翻案した場合**: ファイル冒頭（一部だけなら該当箇所）に出典コメントを付ける。
+  書く内容は上流 repo・commit・ファイルと行範囲（例: `// Adapted from kuraneko1/dsh-mobile-maxxing@24e2e49 packages/dsh-mobile-maxxing/notify/host.js:89-268 (MIT)`）。
+  同じ変更の中で THIRD_PARTY_NOTICES.md の「取り込んだファイル・箇所」の表へ 1 行追加する。基準 commit 以外から取り込んだ場合は、その commit を表に書く。
+- **アイデアだけを参照した場合**: ライセンス上の表示義務は無い。経緯を追えるよう、commit message か ADR に出典（repo・commit・ファイル）を残す。
+- 手元の `LICENSE`（本リポジトリの MIT 表示）は書き換えない。上流の著作権表示は THIRD_PARTY_NOTICES.md に置く。
+- 上流の README・画像・UI 文言（locale 等）は写さない。
+- 上流でハッシュ化クラス名や DSH の非公開 API（内部ストア等）に依存している箇所は、そのまま写さない。
+  [spec.md §3](spec.md#3-依存する外部契約) の公開契約（安定した `data-*` 属性・公開サービス）だけを使うよう書き直す（ADR-20261023-1720）。
+
 ## 既知の問題
 
 [known-issues.md](known-issues.md) を参照。
