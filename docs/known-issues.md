@@ -10,14 +10,14 @@
 | ID | 概要 | 影響範囲 | 状態 |
 |---|---|---|---|
 | KI-1 | Escape で閉じた後、フォーカスが FAB に戻らない | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#1](https://github.com/zrg-jp/dsh-mobile-ui/issues/1)） |
-| KI-2 | ピンチズームで `#root` の高さが縮む | iPhone PWA（KI-8 の修正で顕在化） | 対応済み・実機確認待ち（ADR-20261026-1450、[#2](https://github.com/zrg-jp/dsh-mobile-ui/issues/2)） |
+| KI-2 | ピンチズームで `#root` の高さが縮む | iPhone PWA（KI-8 の修正で顕在化） | 解決（ADR-20261026-1450、2026-11-15 に実機で確認。[#2](https://github.com/zrg-jp/dsh-mobile-ui/issues/2)） |
 | KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#3](https://github.com/zrg-jp/dsh-mobile-ui/issues/3)） |
 | KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/zrg-jp/dsh-mobile-ui/issues/4)） |
 | KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#5](https://github.com/zrg-jp/dsh-mobile-ui/issues/5)） |
 | KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 記録のみ（[#6](https://github.com/zrg-jp/dsh-mobile-ui/issues/6)） |
 | KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#7](https://github.com/zrg-jp/dsh-mobile-ui/issues/7)） |
 | KI-9 | 入力欄をタップすると、入力欄が画面の上へ外れていく | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-0450、2026-10-24 に実機で確認） |
-| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 対応済み・実機確認待ち（ADR-20261026-1450、[#8](https://github.com/zrg-jp/dsh-mobile-ui/issues/8)） |
+| KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 解決（ADR-20261026-1450、2026-11-15 に実機で確認。[#8](https://github.com/zrg-jp/dsh-mobile-ui/issues/8)） |
 | KI-10 | キーボード表示中、モデル選択メニューが画面上端の外へ出る | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-1646、2026-10-24 に実機で確認。修正は [#11](https://github.com/zrg-jp/dsh-mobile-ui/issues/11)） |
 | KI-11 | FAB が会話のセッション名・右パネルのファイル名の先頭を隠す | スマホ | 対応済み・実機確認待ち（ADR-20261026-1800、[#12](https://github.com/zrg-jp/dsh-mobile-ui/issues/12)） |
 | KI-12 | 右パネルのターミナルで、キーボードは出るのに文字が入らない（日本語は変換できない、変換で読みが残る） | iPhone PWA（実機で報告あり） | 解決（ADR-20261027-1400・1700・20261028-0330、2026-10-29 に実機で確認。Gboard・標準キーボード） |
@@ -40,7 +40,7 @@
 
 - **現象（推定）**: `visualViewport.resize` は scale を区別せず、`--dsh-mobile-vvh` に `visualViewport.height` を入れる。
   倍率 2 なら、レイアウト座標上の `#root` の高さは半分になる。
-- **状態**: 対応済み・実機確認待ち。KI-8 と同時に扱った。
+- **状態**: 解決（2026-11-15 に iPhone PWA 実機で確認。キーボード表示中にピンチして等倍へ戻すと高さが戻る）。KI-8 と同時に扱った。
 - **対応**: ADR-20261026-1450。`|visualViewport.scale − 1| > 0.01` の間は `--dsh-mobile-vvh` / `--dsh-mobile-vvtop` も
   `window` への `resize` 再送も更新せず、等倍へ戻った後の最初のイベントで追従し直す（spec.md §6 `PinchFreezesRoot`）。
   あわせて、拡大中の単指パンがスワイプとして誤発火しないよう、開始時・終了時にズーム中ならスワイプにしない（spec.md §5 `NoSwipeWhileZoomed`）。
@@ -112,7 +112,7 @@
   2. DSH 本体のアプリ外枠（`#root` の固定高さ、`overflow:hidden` など）。DSH の index.html の viewport は
      `width=device-width, initial-scale=1` だけで、ズームを禁止していない（dsh-web-frontend 0.2.0-rc.2 の dist/index.html）。
 - **切り分け**: `cordis.patch.yml` からプラグインを外して再読込し、ピンチが効くかを試す。効けば仮説 1 になる。
-- **対応（実機確認待ち）**: ADR-20261026-1450。`maximum-scale=1` をやめ、viewport meta は項目単位でマージする
+- **対応**: ADR-20261026-1450（2026-11-15 に iPhone PWA 実機でピンチ拡大・縮小と自動ズームなしを確認。仮説 2 の切り分けは不要になった）。`maximum-scale=1` をやめ、viewport meta は項目単位でマージする
   （`width` / `initial-scale` / `viewport-fit` / `interactive-widget` だけを上書き・追加。`user-scalable` 等のズーム制限は足さない）。
   フォーカス時の自動ズームは入力 16px 化のルールだけで防ぐ。KI-2 も同時に扱った。
   2026-10-26 に DSH 0.2.0-rc.2 の配布物を確認し、`dsh-web-frontend` の CSS で `touch-action:none` が使われるのは dock の
