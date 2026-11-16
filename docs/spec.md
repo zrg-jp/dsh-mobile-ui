@@ -256,7 +256,7 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
     iOS 標準キーボードの列と、修正後の Gboard の列は実機で確かめていない（推定は ADR-20261027-1400）。予測候補・自動修正・音声入力・ハードウェアキーボード付き iPad は未検証。
   - 根拠（xterm が捨てる列）: iOS の WebKit は、キーボードの入力メソッドが処理したキーの keydown を keyCode 229 にする。xterm の `_inputEvent` は、keydown から keyup までに来た
     `composed` な `input`（UA の input は常に `composed`）を捨てる。文字は差分検出にしか拾われず、値の更新がその timer より遅れると落ちる（ADR-20261027-0020 の出典）。
-- 高さ合わせ（キーボード表示時）は追加しない。`#root` の追従（§6）で右パネルとターミナルのマウント要素が縮み、DSH の `ResizeObserver` → fit が走る前提（実機未確認。ADR-20261026-1800）。
+- 高さ合わせ（キーボード表示時）は追加しない。`#root` の追従（§6）で右パネルとターミナルのマウント要素が縮み、DSH の `ResizeObserver` → fit が走る前提（2026-11-16 に iPhone PWA で最下行が見えることを確認。ADR-20261026-1800）。
 - mouse tracking を使うアプリでは、xterm がこの wheel をアプリへの入力に変える（デスクトップのホイールと同じ扱い）。
 
 ## 6. viewport・キーボード・セーフエリア
@@ -382,8 +382,8 @@ DSH の要素（html / body / sidebarCol）へ書く属性・inline style（CSS 
 ## 8. 検証状況
 
 - 実機: iPhone PWA で、レイアウト、ドロワー、キーボード、ズーム、スワイプ（ADR の検証欄）をユーザーが確認した。固定オーバーレイの座標補正（KI-10）も 2026-10-24 に確認した。リモート接続での Open 系の非表示とフォルダ選択（§6.3）は 2026-10-26 にユーザーが確認した。iPad と Android は未確認。
-  ピンチズームの許可と `PinchFreezesRoot`（ADR-20261026-1450、KI-2・KI-8）は実機未確認。
-  §4.4 のセッション行、§6.1 の自動フォーカス抑止、§6.2 の Enter で改行（ADR-20261026-1745）は実機未確認。happy-dom ではキーボードの表示を検査できず、`focus()` / `blur()` と `activeElement` で検査している。§6.2 は keydown の抑止と `beforeinput` の送出までを検査し、Lexical が実際に改行を挿入するかは検査できない（happy-dom の `InputEvent` は `getTargetRanges` を持たないため、テストで補っている）。happy-dom は `(pointer:coarse)` と `:has()` を組み合わせた規則・`:hover`・iOS の click 抑止を再現できないため、CSS は文字列と、media を外した規則の当たり方で検査している。
+  ピンチズームの許可、`PinchFreezesRoot`、`NoSwipeWhileZoomed`（ADR-20261026-1450、KI-2・KI-8）は 2026-11-15 に iPhone PWA で確認した。
+  §4.4 のセッション行、§6.1 の自動フォーカス抑止、§6.2 の Enter で改行（ADR-20261026-1745）は 2026-11-16 に iPhone PWA で確認した（fork 経路・iPad・無効化設定は未確認）。happy-dom ではキーボードの表示を検査できず、`focus()` / `blur()` と `activeElement` で検査している。§6.2 は keydown の抑止と `beforeinput` の送出までを検査し、Lexical が実際に改行を挿入するかは検査できない（happy-dom の `InputEvent` は `getTargetRanges` を持たないため、テストで補っている）。happy-dom は `(pointer:coarse)` と `:has()` を組み合わせた規則・`:hover`・iOS の click 抑止を再現できないため、CSS は文字列と、media を外した規則の当たり方で検査している。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
 - 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、131 件。`test/client.test.mjs` 48 件、`test/chrome.test.mjs` 17 件、`test/terminal-input.test.mjs` 57 件、`test/hooks.test.mjs` 9 件（§7.1）。うち 2 件は条件付き skip）。各テストは名前の `[§n]` で本書の節に対応する。
   `test/terminal-input.test.mjs` は devDependency の `@xterm/xterm@6.0.0`（MIT）を happy-dom 上で動かし、onData に届く列を検査する。DSH 同梱の xterm と入力処理が同じことの照合は、
@@ -391,7 +391,7 @@ DSH の要素（html / body / sidebarCol）へ書く属性・inline style（CSS 
   2026-10-28 の Gboard の記録は、そのまま再生する（再生モデルの確認テストは、Backspace をネイティブ削除にしない版でだけ走り、修正後の版では skip。`DSH_MOBILE_UI_CLIENT` で修正前の `lib/client.js` を指定して流す）。
   happy-dom で検査できないもの: カスタムプロパティの継承と実際の重なり、`env()` の値（probe の computed をスタブにする）、`display-mode`（規則の文字列で検査）、ソフトキーボードの表示、xterm 本体のスクロール。
   CI は `.github/workflows/test.yml`。手順は [development.md](development.md)。
-- 実機未確認（ADR-20261026-1800）: §4.5・§5.3・§6 のセーフエリア実測。iPhone PWA での確認項目:
+- ADR-20261026-1800（§4.5・§5.3・§6 のセーフエリア実測）は 2026-11-16 に iPhone PWA で 1・2 と 3 の見た目（余白が二重でない）を確認した。3 のインスペクタでの値の記録、mouse tracking 中のドラッグ、iPad は未確認。確認項目（再確認の手順として残す）:
   1. 閉時に会話タイトルが FAB の右から始まるか（縦・横向き）。右パネルを開くと FAB が消え、閉じるボタン・左端からの右スワイプで戻ると FAB が出るか。
   2. ターミナル（書込可能）をタップしてキーボードが出るか。Gboard と標準キーボードの両方で、英字・数字・空白・かな→漢字の変換と確定・Enter・Backspace が 1 回ずつ入るか。変換で読みが端末の行に残らないか（KI-12、ADR-20261027-1400・1700・20261028-0330）。
      濁点・半濁点・小書きを含む読み（例: 「ごきげん」→「ご機嫌」、「ぱぴぷ」、「きょう」→「今日」、「がっこう」→「学校」）を変換し、端末の行と（Enter 前の）入力が一致するか。Backspace の 1 回押しと長押し（リピート）で、消えた数だけ端末の行も消えるか。読み取り専用ではキーボードが出ないか。縦ドラッグでスクロールバックが指に追従するか。横の右スワイプ（左端起点）で右パネルが畳まれるか。キーボード表示中に最下行が見えるか（見えなければ高さ合わせを追加する）。
