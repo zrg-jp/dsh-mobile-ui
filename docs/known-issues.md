@@ -14,7 +14,7 @@
 | KI-3 | reduced-motion 設定でも閉じるアニメーションが残る | 視差効果を減らす設定の利用者 | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#3](https://github.com/zrg-jp/dsh-mobile-ui/issues/3)） |
 | KI-4 | iPad 横（≥1024px）ではスワイプが効かない | iPad | 検討中（[#4](https://github.com/zrg-jp/dsh-mobile-ui/issues/4)） |
 | KI-5 | モーダルなど前面の UI 上のスワイプが、背後のレイアウトを操作する | スマホ | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#5](https://github.com/zrg-jp/dsh-mobile-ui/issues/5)） |
-| KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 解決（T342 / ADR-20261105-2030、実機未確認。COARSE の change で外し・付け直す。[#6](https://github.com/zrg-jp/dsh-mobile-ui/issues/6)） |
+| KI-6 | coarse 判定へ戻ったとき、キーボード追従の高さを再計算しない | ほぼ無し | 解決（T342 / ADR-20261105-2030。2026-11-16 に iPhone PWA で退行が無いことを確認。COARSE の切替そのものは iPhone では起きないため自動テストで確認。COARSE の change で外し・付け直す。[#6](https://github.com/zrg-jp/dsh-mobile-ui/issues/6)） |
 | KI-7 | ドロワーとモーダルが同時に開いた状態で Escape を押すと、両方とも閉じる | 外付けキーボード | 解決（ブランチ fix/ki-small-bugs、実機未確認。[#7](https://github.com/zrg-jp/dsh-mobile-ui/issues/7)） |
 | KI-9 | 入力欄をタップすると、入力欄が画面の上へ外れていく | iPhone PWA（実機で報告あり） | 解決（ADR-20261024-0450、2026-10-24 に実機で確認） |
 | KI-8 | ピンチによる拡大縮小が効かない | iPhone PWA（実機で報告あり） | 解決（ADR-20261026-1450、2026-11-15 に実機で確認。[#8](https://github.com/zrg-jp/dsh-mobile-ui/issues/8)） |

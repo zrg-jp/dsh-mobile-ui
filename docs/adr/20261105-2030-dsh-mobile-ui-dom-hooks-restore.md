@@ -1,6 +1,6 @@
 # DSH の要素へ書いた属性・inline style を、書く前の値と一緒に記録して戻す（T342）
 
-- Status: proposed
+- Status: accepted（2026-11-16 iPhone PWA 実機で確認）
 - Date: 2026-11-05
 - Level: 3
 - Deciders: AI（Claude 系の実装担当）。オーナーの確認待ち
@@ -72,7 +72,11 @@ A を採る。適用範囲は、DSH の要素へ書く属性・inline style（ht
 - 新しいテスト `test/hooks.test.mjs` 9 件のうち 8 件が修正前の lib/client.js（main d3d2c77）で赤、修正後に緑（SAFE_AREA の喪失は修正前から満たしていた）。全体 131 件が通る（条件付き skip 2 件のうち、DSH の配布物があるこの環境では 1 件が skip）。
 - 壊した版 8 種（inert を false に戻す、COARSE の監視なし、他者の変更の判定なし、旧 sidebarCol の後始末なし、空の style の復元なし、restoreAll と remote の後始末なし、style を書いていない要素の style 属性を消す、onViewport の COARSE ガードなし）が、それぞれ 1〜3 件赤になる。
 - 独立レビュー（OpenCode 無料枠 GLM-5.3-Flash / DeepSeek V4.1 Flash）の指摘で、テストに「同名属性の元の値」「属性の ForeignWriteKept」「COARSE 外の resize」「付け直し時の resize 再送」の検査を足し、style 属性の後始末を style を書いた要素に限った。
-- 実機（iPhone PWA）は未確認。
+- 実機（iPhone PWA）は作成時点で未確認。
+- 実機（2026-11-16、iPhone PWA、bd3d617 = 本変更に main a766eb2 を merge したもの、オーナーが確認）: 次の 6 項目で、従来どおりの動作（退行なし）を確認した。これにより accepted とした。
+  (1) FAB・左端スワイプでのドロワー開閉。(2) 閉じたドロワーの項目がタップに反応しない（inert）。(3) セッションを開くとドロワーが閉じ、開き直すと項目をタップできる。
+  (4) キーボード追従と、閉じた後の高さの復帰。(5) ドロワーの開・閉それぞれで回転しても崩れない。(6) 右パネルの開閉で FAB が消え・戻る。
+  iPhone では `COARSE` が切り替わらないため、KI-6 の経路（COARSE の change での外し・付け直し）と dispose での復元は実機では確かめておらず、自動テストだけで確認している。
 
 ## Consequences
 
