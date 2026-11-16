@@ -94,7 +94,7 @@ MutationObserver が文書全体の childList と `data-sidebar-collapsed` の�
 |---|---|
 | `body[data-dsh-mobile-sidebar]` | frame 無し → `none`、開 → `open`、閉 → `closed` |
 | FAB の `aria-expanded` | 開なら `"true"` |
-| sidebarCol の `inert` | `PHONE ∧ 閉` のときだけ true |
+| sidebarCol の `inert` | `PHONE ∧ 閉` のときだけ付ける。それ以外は false にせず、本プラグインが付ける前の値へ戻す（DSH が付けた inert は消さない。§7 `ConditionLossRestores`）。frame が描き直されて sidebarCol が別の要素になったら、前の要素の inert も戻す |
 
 ### 4.3 操作
 すべての開閉は `ctx.layout.toggleSidebar()` を呼んで行う。プラグインは開閉状態を自分で持たない。
@@ -286,10 +286,10 @@ document 上の passive な `touchstart` / `touchend` / `touchcancel` で判定�
 - **固定オーバーレイの座標補正**（ADR-20261024-1646）: `COARSE` のときに限り、`document.body` の子要素のうち computed `position` が `fixed` で、layout viewport 全体を覆わないものへ `data-dsh-mobile-overlay` を付ける（起動時・body の childList 変化時・`COARSE` の change 時。`COARSE` を外れたら外し、dispose でも外す）。`COARSE` のとき `[data-dsh-mobile-overlay]{translate:0 var(--dsh-mobile-vvtop,0px)}` を適用し、`#root` と同じ座標系へ寄せる。全画面レイヤ（`inset:0` の Modal 等）は対象外（キーボード時のずれは高さの問題で、平行移動では直らないため触らない）。
   位置プロパティ（`top` / `left`）は書き換えないため、DSH の配置計算（トリガーの rect と `offsetHeight`）には影響しない。対象は `#root` 以外。
   不変条件 `OverlaysShareRootFrame`: `COARSE` の間、オーバーレイは `#root` と同じ `offsetTop` の補正を受ける。offsetLeft（横方向）は補正しない。
-  `COARSE` の change は監視しないため、条件を外れた間も変数は前の値のまま残る（[KI-6](known-issues.md)）。
-- **入力 16px**（`COARSE`、[client.js:155](../lib/client.js#L155)）: checkbox / radio 以外の input、textarea、select、`[data-lexical-editor]`、`[contenteditable=true]` に `font-size:16px !important` を指定する。iOS のフォーカス時自動ズームを抑止する。meta でズームを制限しないため（`PinchAllowed`）、この規則が唯一の対策になる（ADR-20261026-1450）。
-- **セーフエリア**（[client.js:157-163](../lib/client.js#L157-L163)）: `SAFE_AREA` のとき、`#root` の上下左右に `env(safe-area-inset-*)` の padding を付ける。ドロワーと FAB は個別に inset を考慮する。
-- **セーフエリアの実測**（T347、ADR-20261026-1800、[client.js:548-618](../lib/client.js#L548-L618)）: `env(safe-area-inset-*)` を padding に持つ不可視の probe 要素（`[data-dsh-mobile-safe-probe]`、0 サイズの fixed、`aria-hidden`）を body 直下に 1 つ置き、
+  `COARSE` を外れたら `--dsh-mobile-vvh` / `--dsh-mobile-vvtop` を元の値へ戻し（元に無ければ外す。§7.1 `ConditionLossRestores`）、`COARSE` へ戻ったらその時点の値で付け直す（T342。[KI-6](known-issues.md) は解決）。付け直しでも、値が前回の再送時から変わっていれば `resize` を再送する。
+- **入力 16px**（`COARSE`、client.js の注入 CSS）: checkbox / radio 以外の input、textarea、select、`[data-lexical-editor]`、`[contenteditable=true]` に `font-size:16px !important` を指定する。iOS のフォーカス時自動ズームを抑止する。meta でズームを制限しないため（`PinchAllowed`）、この規則が唯一の対策になる（ADR-20261026-1450）。
+- **セーフエリア**（client.js の注入 CSS の `SAFE_AREA_QUERY` の規則）: `SAFE_AREA` のとき、`#root` の上下左右に `env(safe-area-inset-*)` の padding を付ける。ドロワーと FAB は個別に inset を考慮する。
+- **セーフエリアの実測**（T347、ADR-20261026-1800、client.js の `measureSafeArea`）: `env(safe-area-inset-*)` を padding に持つ不可視の probe 要素（`[data-dsh-mobile-safe-probe]`、0 サイズの fixed、`aria-hidden`）を body 直下に 1 つ置き、
   `SAFE_AREA` のとき computed の padding を `html` の `--dsh-mobile-safe-{top,right,bottom,left}`（px）に出す。`SAFE_AREA` 外では変数と下記の属性を外す。
   起動時と、`window` の `resize` / `orientationchange`、`visualViewport` の `resize`、`SAFE_AREA` の change で測り直す。probe はオーバーレイ補正（KI-10）の対象外。dispose で probe・変数・属性を外す。
   - native gap の判定: 次をすべて満たすとき `html[data-dsh-mobile-native-gap]` を付ける。`navigator.standalone === true`、縦向き（`innerHeight ≥ innerWidth`）、
@@ -344,10 +344,40 @@ DSH 側の判定（`dsh-host-directory-picker-auto` の bind 判定、open-in-ap
 
 ## 7. ライフサイクル
 
-- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（[client.js:974-976](../lib/client.js#L974-L976)）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、body 属性、html の `data-dsh-mobile-remote`、inert、全リスナー、observer。
+- すべての介入は 1 つの `ctx.effect` の中で登録する。dispose 時は登録と逆の順に撤去する（client.js の effect の戻り値）。撤去するのは、style タグ、meta の元値、CSS 変数、FAB、safe probe、body・html の属性、inert、全リスナー、observer。
 - 例外: §4.4 の切替検知は `ctx.inject` の子 fiber の effect に置く（`OptionalSessions`）。親 fiber の停止、または `sessions` サービスの撤去で購読を外す。
 - `style[data-plugin-css="dsh-mobile-ui/override.css"]` が既にあれば、style タグを重ねて挿入しない。この場合、既存のタグは本 effect の撤去対象にならない。
 - 撤去手段は、`cordis.patch.yml` の insert を削除することと、ページを再読込すること（README）。
+
+### 7.1 DSH の要素へ書いた値の記録と復元（T342、ADR-20261105-2030）
+
+DSH の要素（html / body / sidebarCol）へ書く属性・inline style（CSS 変数を含む）は、effect ごとの記録係 `hooks`（client.js `createDomHooks`）を通して書く。
+`hooks.set(el, kind, name, value)` は、その項目を初めて書く前の値を記録してから書く（`kind` は `attr`（`inert` を含む）か `style`）。
+`hooks.restore(el, kind?, name?)` は記録した項目を元の値（元に無ければ削除）へ戻し、記録から外す。`hooks.restoreAll()` は dispose の最後に残りを全部戻す（個々の disposer の取りこぼしを拾う）。
+
+不変条件:
+- `DisposeRestoresDom`: mount → 任意の操作（開閉・右パネル・キーボード・回転）→ dispose の後、html / body / frame / sidebarCol / meta と、mount 前から body 直下にあった要素の属性集合・inline style の宣言・`inert` は mount 前と同じになる（他者がその間に書き換えた項目は除く。下記 `ForeignWriteKept`）。
+  mount 前に style 属性が無ければ属性を残さず、空の `style=""` があれば残す。frame の `data-sidebar-collapsed` は DSH の状態なので対象外。
+- `ConditionLossRestores`: 条件を外れた介入は、その時点で元の値へ戻す。
+
+  | 介入 | 条件 | 外れたとき |
+  |---|---|---|
+  | sidebarCol の `inert` | `PHONE ∧ 閉` | 元の値へ戻す（開・`PHONE` 外・sidebarCol の差し替え） |
+  | `--dsh-mobile-vvh` / `--dsh-mobile-vvtop` | `COARSE` | 元の値へ戻す（元に無ければ外す）。戻ったら今の値で付け直す |
+  | `--dsh-mobile-safe-*`、`data-dsh-mobile-native-gap` | `SAFE_AREA`（印は §6 の判定も） | 元の値へ戻す（元に無ければ外す） |
+  | `data-dsh-mobile-overlay` | `COARSE` | 外す（§6） |
+  | `body[data-dsh-mobile-sidebar]` / `[data-dsh-mobile-right]` | 常時（値が状態を表す） | dispose でだけ元の値へ戻す |
+  | `html[data-dsh-mobile-remote]` | `REMOTE`（起動時に 1 回判定） | dispose でだけ元の値へ戻す |
+
+- `ForeignWriteKept`: 戻すのは、今の値が本プラグインの最後に書いた値のままの項目だけ。後から他者（DSH 本体・他プラグイン）が書き換えた項目は、その値を残す（viewport meta の項目単位マージ §6 と同じ考え方）。
+  判定は値の一致による。他者が本プラグインと同じ値を書いた場合は区別できず、元の値へ戻す。style を一度も書いていない要素の style 属性には触れない。
+
+`hooks` を通さないもの（理由は ADR-20261105-2030）:
+- 本プラグインが作る要素（FAB・safe probe・style タグ）: 要素ごと取り除けば戻る。
+- viewport meta: §6 の項目単位マージが記録と復元を自前で持つ（T346）。
+- `data-dsh-mobile-overlay`: body 直下へ portal されるたびに作り直される要素に付ける印で、元の値は無い（DSH は同名の属性を使わない）。dispose と `COARSE` の喪失で `querySelectorAll` により全部外す。
+- ターミナル（§5.3）: 書き換えるのは helper textarea の値と選択範囲だけで、これは端末への入力そのもの（戻す対象ではない）。リスナーは disposer で外す。
+- frame の `--dsh-frame-leading-clearance`: 注入 CSS の規則で与え、要素には書かない（style タグを外せば消える）。
 
 ## 8. 検証状況
 
@@ -355,7 +385,7 @@ DSH 側の判定（`dsh-host-directory-picker-auto` の bind 判定、open-in-ap
   ピンチズームの許可、`PinchFreezesRoot`、`NoSwipeWhileZoomed`（ADR-20261026-1450、KI-2・KI-8）は 2026-11-15 に iPhone PWA で確認した。
   §4.4 のセッション行、§6.1 の自動フォーカス抑止、§6.2 の Enter で改行（ADR-20261026-1745）は 2026-11-16 に iPhone PWA で確認した（fork 経路・iPad・無効化設定は未確認）。happy-dom ではキーボードの表示を検査できず、`focus()` / `blur()` と `activeElement` で検査している。§6.2 は keydown の抑止と `beforeinput` の送出までを検査し、Lexical が実際に改行を挿入するかは検査できない（happy-dom の `InputEvent` は `getTargetRanges` を持たないため、テストで補っている）。happy-dom は `(pointer:coarse)` と `:has()` を組み合わせた規則・`:hover`・iOS の click 抑止を再現できないため、CSS は文字列と、media を外した規則の当たり方で検査している。
 - モデル検査: §5.2 の判定表を写した純粋関数で、同値類と境界の直積 2160 件を全列挙した。対象は `x ∈ {0,28,29,195,196}`（幅 390）、`dx ∈ {±59,±60}`、`dy ∈ {0,30,31}` と各状態フラグ。不変条件 3 件に反例は無かった（行 5a の追加前のモデル）。これは手で抽象化したモデルに対する結果であり、コードの証明ではない。スクリプトは `tmp/spec-review/swipe-enum.mjs` にあり、コミットしない。
-- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、122 件。`test/client.test.mjs` 48 件、`test/chrome.test.mjs` 17 件、`test/terminal-input.test.mjs` 57 件。うち 2 件は条件付き skip）。各テストは名前の `[§n]` で本書の節に対応する。
+- 自動テスト: `npm test`（node:test + happy-dom、ADR-20261024-0410、131 件。`test/client.test.mjs` 48 件、`test/chrome.test.mjs` 17 件、`test/terminal-input.test.mjs` 57 件、`test/hooks.test.mjs` 9 件（§7.1）。うち 2 件は条件付き skip）。各テストは名前の `[§n]` で本書の節に対応する。
   `test/terminal-input.test.mjs` は devDependency の `@xterm/xterm@6.0.0`（MIT）を happy-dom 上で動かし、onData に届く列を検査する。DSH 同梱の xterm と入力処理が同じことの照合は、
   DSH の配布物がある環境でだけ走る（無ければ skip。`DSH_SIDEBAR_TERMINAL_JS` で場所を指定できる）。iOS のイベント列は実機の記録（xterm.js issue #5835）を合成したもので、実機の時刻・順序の全部は再現しない。
   2026-10-28 の Gboard の記録は、そのまま再生する（再生モデルの確認テストは、Backspace をネイティブ削除にしない版でだけ走り、修正後の版では skip。`DSH_MOBILE_UI_CLIENT` で修正前の `lib/client.js` を指定して流す）。
