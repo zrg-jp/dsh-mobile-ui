@@ -1,6 +1,6 @@
 # セッション選択と入力欄のタッチ操作（1 タップで開く・自動フォーカス抑止・Enter で改行）
 
-- Status: proposed
+- Status: accepted（2026-11-16 iPhone PWA 実機で確認）
 - Date: 2026-10-26
 - Level: 3
 - Deciders: オーナー（T309 は A+C 案、T344 は COARSE で既定オン・送信はボタン、を決定）、実装は AI
@@ -105,7 +105,7 @@ DSH 0.2.0-rc.2 の行（ui-workspace `SessionNodeItem`）は JS 上は 1 クリ�
 
 ## Consequences
 
-- Positive: 行を 1 タップで開ける見込み（実機未確認）。開いた後にドロワーが自動で閉じる。開いた後にキーボードが出ない見込み。
+- Positive: 行を 1 タップで開ける（2026-11-16 実機で確認）。開いた後にドロワーが自動で閉じる。開いた後にキーボードが出ない（同）。
 - Negative: 「…」が常時見えるため、タイトルの表示幅が狭くなる。COARSE ではタイトルのダブルタップで改名できない。
   T310: キーボードが一瞬出て引っ込む可能性がある。キーボード付きの iPad（COARSE）でも、開いた直後は入力欄にフォーカスしない。
   T344: COARSE では外付けキーボードでも Enter が改行になる（送信は Cmd/Ctrl+Enter か送信ボタン）。
@@ -136,7 +136,12 @@ DSH 0.2.0-rc.2 の行（ui-workspace `SessionNodeItem`）は JS 上は 1 クリ�
 - T344 独立レビュー（codex / gpt-6.1-sol、閲覧のみ）: compositionend 直後の確定 Enter（isComposing=false、keyCode=13）を改行に変えてしまう、との指摘を採用し、
   DSH 本体と同じ 10ms の猶予を加えた。合成 beforeinput が Lexical に届くこと（isTrusted を見ない、getTargetRanges が空でも既存の選択で処理）、
   shortcuts の window capture が Enter を処理しないこと、候補の強調と `aria-activedescendant` の対応は、レビューで配布物と照合し問題なしとされた。
-- T344 実機: 未確認。
+- T344 実機: 未確認（作成時点）。
+- 実機（2026-11-16、iPhone PWA、main 1a9a14e、オーナーが確認）: 次の 6 項目すべてで期待どおりだった。これにより accepted とした。
+  (1) セッション行の 1 タップで開く（T309-A。1B は不要）。(2) 素早い 2 回タップで改名ダイアログが開かず、「…」が常時表示されそのメニューから改名できる。
+  (3) 開くとドロワーが閉じてチャットが見える。行・新規作成・検索の経路で同じ。(4) 開いた直後にキーボードが出ない（T310）。
+  (5) その後、入力欄のタップで確実にキーボードが出る。(6) 改行キーで送信されず改行になり、日本語変換の確定 Enter は確定だけで改行にならない。送信はボタンでできる（T344）。
+  fork 経路、外付けキーボード付き iPad、`dsh-mobile-ui:enterNewline` による無効化は確認していない。
 
 ## 関連ADR
 
